@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public class Player : MovingObject
+public class PlayerExample : MonoBehaviour
 {
     public int wallDamage = 1;
     public int pointsPerFood = 10;
@@ -15,24 +15,24 @@ public class Player : MovingObject
 
     /* OnStart, retrieve the animator, set player's reference to the food value, 
      * and call MovingObject's start, retrieving its init data.*/
-    protected override void Start()
+    protected void Start()
     {
-        animator = GetComponent<Animator>();
-        food = GameManager.instance.playerFoodPoints;
-        base.Start();
+        //animator = GetComponent<Animator>();
+        //food = GameManager.instance.playerFoodPoints;
+        //base.Start();
     }
 
     // When this GameObject becomes disabled or inactive...
     private void OnDisable()
     {
         // Update the GameManager's instance of food points.
-        GameManager.instance.playerFoodPoints = food;
+        //GameManager.instance.playerFoodPoints = food;
     }
     
     void Update()
     {
         // If it's not the player's turn, don't check for input.
-        if (!GameManager.instance.playersTurn) return;
+        //if (!GameManager.instance.playersTurn) return;
 
         // Otherwise, check for input.
         int horizontal = 0;
@@ -46,12 +46,12 @@ public class Player : MovingObject
             vertical = 0;
 
         // Check whether the player is moving horizontally or vertically.
-        if (horizontal != 0 || vertical != 0)
-            AttemptMove<Wall>(horizontal, vertical);
+        //if (horizontal != 0 || vertical != 0)
+        //    AttemptMove<Wall>(horizontal, vertical);
     }
 
     // Called when checking whether an object can move to a given location.
-    protected override void AttemptMove<T>(int xDir, int yDir)
+    protected void AttemptMove<T>(int xDir, int yDir)
     {
         // Attempting to move should cost food.
         food--;
@@ -61,7 +61,7 @@ public class Player : MovingObject
          *      - Whether you can't move
          *      - If you can't move, retrieves the component that's blocking
          *      - Calls OnCantMove using the blocking component as the parameter*/
-        base.AttemptMove<T>(xDir, yDir);
+        //base.AttemptMove<T>(xDir, yDir);
 
         // For later implementation...
         RaycastHit2D hit;
@@ -70,7 +70,7 @@ public class Player : MovingObject
         CheckIfGameOver();
 
         // End the player turn so enemies can move.
-        GameManager.instance.playersTurn = false;
+        //GameManager.instance.playersTurn = false;
     }
 
     private void OnTriggerEnter2D(Collider2D other)
@@ -94,10 +94,10 @@ public class Player : MovingObject
 
     /* Called when the player can't move. When the player moves into a wall, they should 
      * damage it. */
-    protected override void OnCantMove<T>(T component)
+    protected void OnCantMove<T>(T component)
     {
-        Wall hitWall = component as Wall;
-        hitWall.DamageWall(wallDamage);
+        //Wall hitWall = component as Wall;
+        //hitWall.DamageWall(wallDamage);
         animator.SetTrigger("playerChop");
     }
     
@@ -119,7 +119,7 @@ public class Player : MovingObject
     // Check enough points have been lost for the game to end.
     private void CheckIfGameOver()
     {
-        if (food <= 0)
-            GameManager.instance.GameOver();
+        //if (food <= 0)
+            //GameManager.instance.GameOver();
     }
 }
