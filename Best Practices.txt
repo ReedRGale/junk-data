@@ -1,0 +1,12 @@
+Winning and losing should not be at the forefront:
+	- Have rank available, but hide it behind a layer so that the only thing lost or gained is that battle
+	- If players are on losing streaks advise they take a break
+Battles should feel fair:
+	- New players should not be forced to go up against players with a great many more function options than them
+	- Implement set locking such that the game is easier to manage and, if people want to get into the game, there are only so many sets they need to buy into
+Whenever designing a function that scales relative to other types of cards being in the game...
+	- Make sure that you keep the same ratio of cards that interact with it negatively and positively to ensure a similar power curve
+	- Similarly if a function is not strong enough, and it relies on certain types of functions being good, remember beefing up those things will beef up the scaler
+Power Curve:
+	- Things that are vanilla should set the high end of the power curve
+	- When making a function, ask yourself "what does this spell now remove from my future ability to make functions?"
