@@ -15,13 +15,21 @@ public class Player : MonoBehaviour
     private int horizontal;
     private float mouseAngle;
     private bool grounded;
+    private bool grasping;
     private bool leftClickUp;
+    private bool stopRight;
+    private bool stopLeft;
     private Rigidbody2D rb2d;
-
+    
+    private Vector2 NUDGE_LEFT = new Vector2(-0.05f, 0);
+    private Vector2 NUDGE_RIGHT = new Vector2(0.05f, 0);
     private const int LEFT_CLICK = 0;
     private const float DETECTION_RANGE = 0.05f;
+    private const float STOP_MOVEMENT = 45f;
     private const float RIGHT_ANGLE = 90f;
-    private const float ANGLE_RESTRICTION = 25f;
+    private const float WALLDETECT_ANGLE_RESTRICTION = 25f;
+    private const float WALLSTICK_ANGLE_RESTRICTION = 8f;
+    private const float FLOORSTICK_ANGLE_RESTRICTION = 60f;
 
     private void Start()
     {
@@ -51,6 +59,9 @@ public class Player : MonoBehaviour
         // Don't allow movement input if not grounded.
         if (!grounded) return;
 
+        // We're moving, so gravity must apply.
+        rb2d.gravityScale = 1.0f;
+
         // Move.
         if (leftClickUp && rb2d.velocity.magnitude < float.Epsilon)
         {
@@ -72,8 +83,8 @@ public class Player : MonoBehaviour
                 Vector2 moveDir = Rotate(collisionDir, RIGHT_ANGLE * horizontal).normalized;
 
                 // Restricted angles so we don't start moving up at walls.
-                float highRestriction = ANGLE_RESTRICTION + RIGHT_ANGLE;
-                float lowRestriction = RIGHT_ANGLE - ANGLE_RESTRICTION;
+                float highRestriction = WALLDETECT_ANGLE_RESTRICTION + RIGHT_ANGLE;
+                float lowRestriction = RIGHT_ANGLE - WALLDETECT_ANGLE_RESTRICTION;
                 float correctionAngle = Vector2.Angle(Vector2.right, moveDir);
 
                 // Correct for gravity.
@@ -81,6 +92,10 @@ public class Player : MonoBehaviour
                 moveDir.y = ungravity;
 
                 // Move, using the given prediction.
+                if (stopLeft)
+                    rb2d.AddForce(NUDGE_RIGHT);
+                if (stopRight)
+                    rb2d.AddForce(NUDGE_LEFT);
                 if (correctionAngle <= lowRestriction || correctionAngle >= highRestriction)
                     rb2d.AddForce(moveDir * walkAccel);
             }
@@ -88,9 +103,35 @@ public class Player : MonoBehaviour
         else rb2d.AddForce(-rb2d.velocity);
     }
 
-    void OnCollisionStay2D(Collision2D other) { grounded = true; }
+    void OnCollisionStay2D(Collision2D other)
+    {
+        // Collect contact direction angle.
+        ContactPoint2D[] contact = new ContactPoint2D[1];
+        other.GetContacts(contact);
+        Vector2 collisionDir = (contact[0].point - (Vector2)rb2d.transform.position);
+        float collisionAngle = Vector2.Angle(Vector2.right, collisionDir);
 
-    void OnCollisionExit2D(Collision2D other) { grounded = false; }
+        if (collisionAngle < WALLSTICK_ANGLE_RESTRICTION)
+            rb2d.AddForce(NUDGE_LEFT);
+        else if (collisionAngle > 180f - WALLSTICK_ANGLE_RESTRICTION)
+            rb2d.AddForce(NUDGE_RIGHT);
+        else if (collisionAngle < STOP_MOVEMENT)
+        {
+            Debug.Log("stopLeft");
+            stopLeft = true;
+        }
+        else if (collisionAngle > 180f - STOP_MOVEMENT)
+        {
+            Debug.Log("stopRight");
+            stopRight = true;
+        }
+        else if (collisionAngle > FLOORSTICK_ANGLE_RESTRICTION || collisionAngle < 180f - FLOORSTICK_ANGLE_RESTRICTION)
+        {
+            stopLeft = false;
+            stopRight = true;
+            grounded = true;
+        }
+    }
 
     private Vector2 Rotate(Vector2 v, float degrees)
     {
