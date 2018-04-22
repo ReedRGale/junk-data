@@ -10,3 +10,6 @@ Whenever designing a function that scales relative to other types of cards being
 Power Curve:
 	- Things that are vanilla should set the high end of the power curve
 	- When making a function, ask yourself "what does this spell now remove from my future ability to make functions?"
+Building for Different Types of Players:
+	- Ranked should reward less in-game currency but offer rank and unique swag
+	- Normals should offer more in-game currency

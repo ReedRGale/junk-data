@@ -475,7 +475,8 @@ GameObject:
   - component: {fileID: 1159585726}
   - component: {fileID: 1159585725}
   - component: {fileID: 1159585727}
-  m_Layer: 0
+  - component: {fileID: 1159585728}
+  m_Layer: 2
   m_Name: Player
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -585,12 +586,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 88f17e1d2e3763d4c9fb533caa4fdae1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  walkVelocity: 1.5
-  walkAccel: 0.5
+  walkVelocity: 1.2
+  walkAccel: 0.8
   heelTurn: 2.5
-  jumpForce: 0.45
-  gravityBalance: 1
+  jumpForce: 0.35
+  gravityBalance: 1.2
   marker: {fileID: 1205727700437222, guid: 36b2c80b23d43fb45953107e8907d4b6, type: 2}
+  grounded: 0
+--- !u!114 &1159585728
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 1159585722}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d7b3d74ca5bb958418026a797def3e74, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  rightLocked: 0
+  leftLocked: 0
+  wouldDie: 0
+  wouldFall: 0
 --- !u!1 &1309850289
 GameObject:
   m_ObjectHideFlags: 0
@@ -875,7 +892,7 @@ BoxCollider2D:
   m_GameObject: {fileID: 2029109933}
   m_Enabled: 1
   m_Density: 1
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 6200000, guid: 92b2432fb0c701d469e606efedf2d548, type: 2}
   m_IsTrigger: 0
   m_UsedByEffector: 0
   m_UsedByComposite: 0
