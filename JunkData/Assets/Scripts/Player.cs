@@ -40,8 +40,12 @@ public class Player : MonoBehaviour
     {
         // Check for walk input.
         horizontal = (int)Input.GetAxisRaw("Horizontal");
-        if (horizontal == -1 && prediction.leftLocked || horizontal == 1 && prediction.rightLocked)
+        if (horizontal == -1 && prediction.lockStates.Contains(LockState.LEFT) || 
+            horizontal ==  1 && prediction.lockStates.Contains(LockState.RIGHT))
+        {
             horizontal = 0;
+            rb2d.AddForce(-rb2d.velocity);
+        }
 
         // Check for jump input.
         leftClickUp = !leftClickUp && grounded ? Input.GetMouseButtonUp(LEFT_CLICK) : leftClickUp;
@@ -94,6 +98,8 @@ public class Player : MonoBehaviour
             if (correctionAngle <= lowRestriction || correctionAngle >= highRestriction)
                 rb2d.AddForce(moveDir * walkAccel);
         }
+        //else
+        //    rb2d.AddForce(-rb2d.velocity);
     }
 
     void OnCollisionStay2D(Collision2D other)

@@ -3,13 +3,15 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum LockState { RIGHT, LEFT, UP, DOWN };
+
 public class PredictionTool : MonoBehaviour
 {
-    public bool rightLocked;
-    public bool leftLocked;
-    [HideInInspector] public bool wouldDie;                     // Is 'death' a piece of data that means something?
-    [HideInInspector] public bool wouldFall;                    // Is 'fall' a piece of data that means something?
+    [HideInInspector] public List<LockState> lockStates;                         // All directions currently locked.
+    [HideInInspector]  public Dictionary<LockState, RaycastHit2D> lockData;     // Extra information about why a dirction is locked.
 
+    private bool wouldDie;                                      // Is 'death' a piece of data that means something?
+    private bool wouldFall;                                     // Is 'fall' a piece of data that means something?
     private int direction;
     private RaycastHit2D predeath = new RaycastHit2D();         // The last safe point before the next potential threat.
     private RaycastHit2D postdeath = new RaycastHit2D();         // The last safe point before the next potential threat.
@@ -18,17 +20,23 @@ public class PredictionTool : MonoBehaviour
     private Player player;
     private float width;                                        // The width of the collider.
     private Rigidbody2D rb2d;
-
-    public const int PREDICTION_SLICES = 10;                    // How many slices to cut the lookahead data into.
-
-    // CHANGE THIS TO SCALE WITH RADIUS
-    private const float EXTREME_CHANGE = 0.01f;                 // Units between two height values before we can presume a fall.
+    private float detectionLength;
+    
+    private const int PREDICTION_SLICES = 10;                    // How many slices to cut the lookahead data into.
+    private const float ERROR_RANGE = 0.01f;
+    private const float KEENING_VALUE = 0.001f;
+    private const float CHECK_FROM = 0.5f;
 
     void Start()
     {
+        // Initialize locking data.
+        lockStates = new List<LockState>();
+        lockData = new Dictionary<LockState, RaycastHit2D>();
+
         rb2d = gameObject.GetComponent<Rigidbody2D>();
         width = gameObject.GetComponent<Collider2D>().bounds.extents.x * 2;
         player = gameObject.GetComponent<Player>();
+        detectionLength = width;
     }
 
     void FixedUpdate()
@@ -41,14 +49,15 @@ public class PredictionTool : MonoBehaviour
         wouldFall = false;
 
         // Collect and analyze data from raycasts.
-        SetDirectionLocks(CastRays(2 * StoppingDistance(), PREDICTION_SLICES), CastRays(2 * (StoppingDistance() + width), PREDICTION_SLICES));
+        SetDirectionLocks(  CastRays(2 * StoppingDistance(), GetFallFocus()), 
+                            CastRays(2 * (StoppingDistance() + width), GetFallFocus()));
     }
 
-    // Collect data ahead of the unit.
-    private RaycastHit2D[] CastRays(float predictionDistance, float slices)
+    // Collect data ahead of the unit stopping distance length beginning from x offset from the rb2d's position.
+    private RaycastHit2D[] CastRays(float predictionDistance, float offset)
     {
         // Slice up prediction line into even segments to create origin points for our detection lines.
-        float pOriginX = predictionDistance / slices;
+        float pOriginX = predictionDistance / PREDICTION_SLICES;
 
         // Prepare an array to hold all RaycastHits.
         RaycastHit2D[] data = new RaycastHit2D[PREDICTION_SLICES];
@@ -56,10 +65,10 @@ public class PredictionTool : MonoBehaviour
         // Use origins as x values to generate a line of points to cast rays from.
         for (int i = 0; i < PREDICTION_SLICES; i++)
         {
-            data[i] = Physics2D.Raycast(new Vector2(rb2d.position.x + (MoveDir() * pOriginX * i), rb2d.position.y), Vector2.down);
+            data[i] = Physics2D.Raycast(new Vector2(rb2d.position.x + offset + (MoveDir() * pOriginX * i), rb2d.position.y), Vector2.down);
 
             // DEBUG:
-            Debug.DrawRay(new Vector2(rb2d.position.x + (MoveDir() * pOriginX * i), rb2d.position.y), Vector2.down, Color.cyan, 0.05f);
+            Debug.DrawRay(new Vector2(rb2d.position.x + offset + (MoveDir() * pOriginX * i), rb2d.position.y), Vector2.down, Color.green, 0.05f);
         }
 
         // Cast rays and return them in an array.
@@ -71,7 +80,7 @@ public class PredictionTool : MonoBehaviour
     {
         // LookForDanger(lookahead);  // Needs testing.
         LookForFall(data, lookahead);
-        DirectionLock();     
+        SetLocks();     
     }
     
     // If there's an object that might kill you up ahead, sets wouldDie and the points before and after death.
@@ -84,8 +93,7 @@ public class PredictionTool : MonoBehaviour
             wouldDie = data[i].collider.tag.Equals("DangerZone");
             if (wouldDie)
             {
-                predeath = data[i - 1];
-                postdeath = data[i];
+                KeenPrediction(data[i], RequireDeath, AssignDeath);
                 return;
             }
         }
@@ -95,18 +103,13 @@ public class PredictionTool : MonoBehaviour
     private void LookForFall(RaycastHit2D[] data, RaycastHit2D[] lookahead)
     {
         // Analyze data given and convert it to useful forms.
-        float[] stoppingDeltas = AnalyzeHeightData(data);
         int pointsToPlayerWidth = AnalyzeFallLookahead(lookahead);
 
-        Debug.Log(data[0].point.x - data[1].point.x);
-
         // Check for potential falls.
-        for (int i = 0; i < stoppingDeltas.Length; i++)
-            if (stoppingDeltas[i] > EXTREME_CHANGE)
+        for (int i = 0; i < data.Length; i++)
+            if (PastExtreme(data[i].point.y))
             {
-                wouldFall = true;
-                prefall = data[i];
-                postfall = data[i + 1];
+                KeenPrediction(data[i], RequireFall, AssignFall);
                 break;
             }
 
@@ -123,9 +126,9 @@ public class PredictionTool : MonoBehaviour
                 }
 
             // Look beyond the unit's width beyond the fall point.
-            for (int i = 0; i < pointsToPlayerWidth || lookaheadFall + i < lookahead.Length; i++)
+            for (int i = 0; i < pointsToPlayerWidth && lookaheadFall + i < lookahead.Length; i++)
                 // If the data says there are any points we experience where an extreme change isn't registered, we're not in danger of falling.
-                if (prefall.point.y - lookahead[lookaheadFall + i].point.y < EXTREME_CHANGE)
+                if (!PastExtreme(lookahead[lookaheadFall + i].point.y))
                 {
                     wouldFall = false;
                     break;
@@ -133,16 +136,7 @@ public class PredictionTool : MonoBehaviour
         }
     }
 
-    // Return an array of changes in heights between the collision points.
-    private float[] AnalyzeHeightData(RaycastHit2D[] data)
-    {
-        float[] deltaHeight = new float[data.Length - 1];
-        for (int i = 0; i < data.Length - 1; i++)
-            deltaHeight[i] = data[i].point.y - data[i + 1].point.y;
-        return deltaHeight;
-    }
-
-    // Return the length just shy of the player's length in prediction slices.
+    // Return the length just shy of the player's width in prediction slices.
     private int AnalyzeFallLookahead(RaycastHit2D[] lookahead)
     {
         // Get the x value between any two points.
@@ -153,48 +147,118 @@ public class PredictionTool : MonoBehaviour
     }
 
     // Determine which directions should be locked.
-    private void DirectionLock()
+    private void SetLocks()
     {
         if (wouldFall || wouldDie)
         {
             // If the fall point's x magnitude outstrips the danger point's magnitude...
-            RaycastHit2D closest = Mathf.Abs(rb2d.position.x - postfall.point.x) < Mathf.Abs(rb2d.position.x - postdeath.point.x) ? postfall : postdeath;
+            RaycastHit2D closestDoom = Mathf.Abs(GetFallFocus() - postfall.point.x) < Mathf.Abs(GetFallFocus() - postdeath.point.x) ? postfall : postdeath;
 
             // Determine which direction to lock movement.
-            if (rb2d.position.x - closest.point.x > 0)
-            {
-                leftLocked = true;
-                rightLocked = false;
-            }
+            if (GetFallFocus() - closestDoom.point.x > 0)
+                SetLock(LockState.LEFT, closestDoom);
             else
-            {
-                leftLocked = false;
-                rightLocked = true;
-            }
+                SetLock(LockState.RIGHT, closestDoom);
         }
-        else if (rb2d.velocity.x > 0.1f && leftLocked)
+        else CheckUnlock();
+    }
+
+    // Set a particular direction as locked and record its hit data.
+    private void SetLock(LockState state, RaycastHit2D stateData)
+    {
+        lockStates.Add(state);
+        lockData.Remove(state);
+        lockData.Add(state, stateData);
+    }
+
+    // Unlock a given state and clear its hit data.
+    private void Unlock(LockState state)
+    {
+        lockStates.Remove(state);
+        lockData.Remove(state);
+    }
+
+    // Check if any of the locking states don't need to be locked anymore.
+    private void CheckUnlock()
+    {
+        // Prepare a list to store which states to unlock.
+        List<LockState> states = new List<LockState>();
+
+        // If fall focus isn't within the hit error range, unlock it.
+        foreach (LockState s in lockStates)
+            if (!InLockRange(s))
+                states.Add(s);
+        foreach (LockState s in states)
+            Unlock(s);
+    }
+
+    // Check if a hit is within lockrange.
+    private bool InLockRange(LockState state)
+    {
+        RaycastHit2D hit;
+        lockData.TryGetValue(state, out hit);
+        return hit.point.x >= GetFallFocus() - ERROR_RANGE && hit.point.x <= GetFallFocus() + ERROR_RANGE;
+    }
+
+    // Hone the prediction to get a more accurate set of before and after points.
+    private delegate bool PredictionRequrements(RaycastHit2D before, RaycastHit2D after); // When 'before' becomes 'after'
+    private delegate void AssignHits(RaycastHit2D before, RaycastHit2D after); // Assign 'before' and 'after' to the proper vars.
+    private void KeenPrediction(RaycastHit2D start, PredictionRequrements req, AssignHits assign)
+    {
+        RaycastHit2D beforeKeen = Physics2D.Raycast(new Vector2(start.point.x, rb2d.position.y), Vector2.down);
+        RaycastHit2D afterKeen = Physics2D.Raycast(new Vector2(start.point.x + (MoveDir() * KEENING_VALUE), rb2d.position.y), Vector2.down);
+
+        // DEBUG:
+        Debug.DrawRay(new Vector2(start.point.x + (MoveDir() * KEENING_VALUE), rb2d.position.y), Vector2.down, Color.green, 0.05f);
+
+        // Shave off values until a very close changing point is reached.
+        while (!req(beforeKeen, afterKeen))
         {
-            // Debug.Log("Left Unlocked X: " + rb2d.velocity.x);
-            leftLocked = false;
+            beforeKeen = afterKeen;
+            afterKeen = Physics2D.Raycast(new Vector2(afterKeen.point.x + (MoveDir() * KEENING_VALUE), rb2d.position.y), Vector2.down);
+
+            // DEBUG:
+            Debug.DrawRay(new Vector2(afterKeen.point.x + (MoveDir() * KEENING_VALUE), rb2d.position.y), Vector2.down, Color.green, 0.05f);
         }
-        else if (rb2d.velocity.x < -0.1f && rightLocked)
-        {
-            // Debug.Log("Right Unlocked X: " + rb2d.velocity.x);
-            rightLocked = false;
-        }
-        else if (rb2d.velocity.y > 2)
-        {
-            leftLocked = false;
-            rightLocked = false;
-        }
+
+        assign(beforeKeen, afterKeen);
+    }
+
+    private bool RequireDeath(RaycastHit2D before, RaycastHit2D after)
+    {
+        return !before.collider.tag.Equals("DangerZone") && after.collider.tag.Equals("DangerZone");
+    }
+
+    private bool RequireFall(RaycastHit2D before, RaycastHit2D after)
+    {
+        return PastExtreme(after.point.y);
+    }
+
+    private void AssignDeath(RaycastHit2D before, RaycastHit2D after)
+    {
+        predeath = before;
+        postdeath = after;
+        wouldDie = true;
+    }
+
+    private void AssignFall(RaycastHit2D before, RaycastHit2D after)
+    {
+        prefall = before;
+        postfall = after;
+        wouldFall = true;
     }
 
     // Calculate the stopping distance for our prediction. [KE = (1/2)mv^2]
-    private float StoppingDistance() { return 0.5f * rb2d.mass * Mathf.Pow(rb2d.velocity.x, 2); }
+    private float StoppingDistance() { return 0.5f * rb2d.mass * Mathf.Pow(rb2d.velocity.x * 1.1f, 2); }
 
     // Helper function to determine the direction of the player.
     // 0:  Not Moving
     // 1:  Moving Right
     // -1: Moving Left
     private int MoveDir() { return rb2d.velocity.x < 0 ? -1 : 1; }
+
+    // Value to check falls from.
+    private float GetFallFocus() { return MoveDir() * -width * CHECK_FROM;  }
+
+    private bool PastExtreme(float y) { return rb2d.position.y - y > detectionLength; }
 }
