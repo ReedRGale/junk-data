@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 public class Movable : MonoBehaviour
-{ 
+{
     /* Delegates */
 
 
@@ -85,6 +85,12 @@ public class Movable : MonoBehaviour
     // Is grounded.
     protected bool isGrounded = false;
 
+    // The greatest angle between collisions experiencced and the down vector.
+    protected float downToCollisionAngle = 0;
+
+    // The position at the beginning of the FixedUpdate.
+    protected Vector2 prevPosition = Vector2.zero;
+
     // External signaled this Movable to fly. Ammy named this.
     protected bool nyoom = false;
 
@@ -95,13 +101,13 @@ public class Movable : MonoBehaviour
     protected float flightForce = 0.2f;
 
     // Max velocity the unit can speed up to.
-    protected float walkVelocity = 1.2f;
+    protected float walkVelocity = 1.25f;
 
     // Magnitude of force the unit experiences while moving.
-    protected float walkAccel = 0.5f;
+    protected float walkAccel = 0.7f;
 
     // A value to, when walking over bumps, counteract gravity.
-    protected float gravityBalance = 0.7f;
+    protected float gravityBalance = 1.3f;
 
 
     // Move into constants object.
@@ -153,19 +159,20 @@ public class Movable : MonoBehaviour
             WalkInput();
 
             // Check unit state.
+            CheckSliding();
+            CheckStatic();
             CheckDeconstructed();
             CheckStunned();
             CheckRising();
             CheckFalling();
             CheckSliding();
-            CheckStatic();
         }
         
         // Determine and initialize the current move category.
         foreach (CategoryCallback C in categoryCallbacks)
             if (C(this, out category)) break;
 
-        Debug.Log("Move Category:  " + GetMoveCategory());
+        if(!isGrounded) Debug.Log("Move Category:  " + GetMoveCategory());
 
         // Record move category data for next loop.
         RecordMoveCategory();
@@ -173,6 +180,9 @@ public class Movable : MonoBehaviour
 
     protected virtual void FixedUpdate()
     {
+        // Collect previous position for walking calculations.
+        prevPosition = rb2d.position;
+
         switch (category)
         {
             case MoveCategory.CONTEMPLATING:
@@ -206,16 +216,17 @@ public class Movable : MonoBehaviour
     {
         // DEBUG
         {
+            Vector3 contactPoint = collision.contacts[0].point;
             Collider2D[] c2ds = new Collider2D[1];
             rb2d.GetAttachedColliders(c2ds);
-            Vector3 contactPoint = collision.contacts[0].point;
             Vector3 center = c2ds[0].bounds.center;
 
             Debug.DrawLine(center, contactPoint, Color.magenta, 1f);
         }
         
-        // Record grounding data.
-        RecordGrounded(collision);
+        // Record collision data.
+        RecordGrounded();
+        RecordCollisionAngle();
 
         // If touching danger zone, change this to true.
         if (collision.gameObject.tag == "DangerZone") isTouchingDZ = true;
@@ -223,8 +234,9 @@ public class Movable : MonoBehaviour
     
     private void OnCollisionStay2D(Collision2D collision)
     {
-        // Record grounding data.
-        RecordGrounded(collision);
+        // Record collision data.
+        RecordGrounded();
+        RecordCollisionAngle();
 
         // Once we hit something, we're not jumping anymore.
         isJumping = false;
@@ -233,16 +245,20 @@ public class Movable : MonoBehaviour
         ContactPoint2D[] contact = new ContactPoint2D[1];
         collision.GetContacts(contact);
         Vector2 collisionDir = (contact[0].point - (Vector2)rb2d.transform.position);
-        float collisionAngle = Vector2.Angle(Vector2.right, collisionDir);
+        float rightToCollisionAngle = Vector2.Angle(Vector2.right, collisionDir);
 
         // Check if colliding with a wall.
-        if (collisionAngle < WALLSTICK_ANGLE_RESTRICTION)
+        if (rightToCollisionAngle < WALLSTICK_ANGLE_RESTRICTION)
             rb2d.AddForce(NUDGE_LEFT);
-        else if (collisionAngle > 180f - WALLSTICK_ANGLE_RESTRICTION)
+        else if (rightToCollisionAngle > 180f - WALLSTICK_ANGLE_RESTRICTION)
             rb2d.AddForce(NUDGE_RIGHT);
     }
     
-    private void OnCollisionExit2D(Collision2D collision) { isGrounded = false; }
+    private void OnCollisionExit2D(Collision2D collision)
+    {
+        RecordGrounded();
+        RecordCollisionAngle();
+    }
 
     /* External State Control */
 
@@ -402,41 +418,25 @@ public class Movable : MonoBehaviour
         if (GetMoveCategory() != MoveCategory.FALLING && WalkingUnlocked(horizontal))
         {
             rb2d.WakeUp();
-            RaycastHit2D[] lowBarrier = new RaycastHit2D[1];
-            rb2d.Cast(Vector2.right * horizontal, lowBarrier, DETECTION_RANGE);
+            
+            // Prepare to move.
+            // X:   Magnitude of 1 in the input direction.
+            // Y:   Magnitude relative to the angle of collision.
+            Vector2 moveDir = new Vector2(horizontal, AngleToYCorrection(downToCollisionAngle));
 
-            // Use the collider points from the cast model to determine force angle.
-            Vector2 collisionDir = (lowBarrier[0].point - lowBarrier[0].centroid);
-            collisionDir = Vector2.zero.Equals(collisionDir) ? Vector2.down : collisionDir;
-            Vector2 moveDir = Rotate(collisionDir, RIGHT_ANGLE * horizontal).normalized;
+            // DEBUG
+            //Debug.DrawLine(rb2d.position, new Vector2(rb2d.position.x, rb2d.position.y + (moveDir * walkAccel).y), Color.blue, 0.5f);
+            //Debug.DrawLine(rb2d.position, new Vector2(rb2d.position.x + (moveDir * walkAccel).x, rb2d.position.y ), Color.blue, 0.5f);
 
-            // Restricted angles so we don't start moving up at walls.
-            float highRestriction = WALLDETECT_ANGLE_RESTRICTION + RIGHT_ANGLE;
-            float lowRestriction = RIGHT_ANGLE - WALLDETECT_ANGLE_RESTRICTION;
-            float correctionAngle = Vector2.Angle(Vector2.right, moveDir);
-
-            // Correct for gravity.
-            float ungravity = moveDir.y * gravityBalance > 0.1f ? moveDir.y * gravityBalance + CLIMB_CORRECTION : 0;
-            moveDir.y = ungravity;
-
-            // Normalize right and left movement.
-            moveDir.x = horizontal;
-
-            // Move, using the given prediction.
-            if (correctionAngle <= lowRestriction || correctionAngle >= highRestriction)
-                rb2d.AddForce(moveDir * walkAccel);
+            // Move if we're not at max movespeed.
+            if (Mathf.Abs(rb2d.velocity.x) < walkVelocity) rb2d.AddForce(moveDir * walkAccel);
         }
         else if (isGrounded)
         {
-            Debug.Log("Lock Detected");
             rb2d.velocity = Vector2.zero;
             rb2d.Sleep();
         }
-        else if (GetMoveCategory() == MoveCategory.FALLING)
-        {
-            Debug.Log("Falling + Lock Detected");
-            rb2d.velocity = new Vector2(0f, rb2d.velocity.y);
-        }
+        else if (GetMoveCategory() == MoveCategory.FALLING) { rb2d.velocity = new Vector2(0f, rb2d.velocity.y); }
     }
 
     // Perform the SLIDING action. (For now, this is just stopping motion.)
@@ -457,6 +457,24 @@ public class Movable : MonoBehaviour
     public bool GetNyoooom() { return nyoom; }
     public int GetWalkDirection() { return (int)Input.GetAxisRaw("Horizontal"); }
     public bool IsGrounded() { return isGrounded; }
+    public List<ContactPoint2D> GetContactPoints()
+    {
+        // Get collider. We can promise that there's only one collider per unit.
+        Collider2D[] colliders = new Collider2D[1];
+        if (rb2d.GetAttachedColliders(colliders) != 1)
+            throw new System.InvalidOperationException();
+        Collider2D collider = colliders[0];
+
+        // Collect each collision point on the collider.
+        ContactPoint2D[] contacts = new ContactPoint2D[20];
+        int contactCount = collider.GetContacts(contacts);
+
+        // Convert it to a list.
+        List<ContactPoint2D> contactList = new List<ContactPoint2D>();
+        for (int i = 0; i < contactCount; i++)
+            contactList.Add(contacts[i]);
+        return contactList;
+    }
 
     // Return the proper bool per category.
     public bool IsCategory(MoveCategory c)
@@ -535,14 +553,40 @@ public class Movable : MonoBehaviour
     }
 
     // Records whether the unit is grounded or not.
-    private void RecordGrounded(Collision2D collision)
+    private void RecordGrounded()
     {
-        float contactX = collision.contacts[0].point.x;
-        if (contactX < rb2d.position.x + (LESS_THAN_HALF * width) &&
-            contactX > rb2d.position.x - (LESS_THAN_HALF * width))
-            isGrounded = true;
-        else
-            isGrounded = false;
+        // Presume not grounded upon checking.
+        isGrounded = false;
+
+        Debug.DrawRay(new Vector2(prevPosition.x + (LESS_THAN_HALF * width), prevPosition.y), Vector2.up, Color.green, 0.5f);
+        Debug.DrawRay(new Vector2(prevPosition.x - (LESS_THAN_HALF * width), prevPosition.y), Vector2.up, Color.green, 0.5f);
+
+        // Iterate through all contacts and check for grounded state.
+        List<ContactPoint2D> contactList = GetContactPoints();
+        foreach (ContactPoint2D c in contactList)
+        {
+
+            Debug.DrawRay(new Vector2(c.point.x, prevPosition.y), Vector2.up, Color.green, 0.5f);
+            if (c.point.x < prevPosition.x + (LESS_THAN_HALF * width) &&
+                    c.point.x > prevPosition.x - (LESS_THAN_HALF * width))
+                isGrounded = true;
+        }
+    }
+
+    // Record the collision angle, measured from Vector2.down.
+    private void RecordCollisionAngle()
+    {
+        // Assume colliding with ground initially.
+        downToCollisionAngle = 0;
+
+        // Iterate through all contacts and set the collision angle to the greatest value.
+        List<ContactPoint2D> contactList = GetContactPoints();
+        foreach (ContactPoint2D c in contactList)
+        {
+            Vector2 length = c.point - prevPosition;
+            float angle = Vector2.Angle(length, Vector2.down);
+            downToCollisionAngle = angle > downToCollisionAngle ? angle : downToCollisionAngle;
+        }
     }
 
     // Records the current move state for the next physics check.
@@ -560,6 +604,9 @@ public class Movable : MonoBehaviour
             moveCategoryQueue.Enqueue(category);
         }
     }
+
+    // Convert angle to Y Force.
+    private float AngleToYCorrection(float angle) { return angle < RIGHT_ANGLE ? 1.5f * (angle / RIGHT_ANGLE) : 0; }
 
     // Reset the MoveQueue.
     private void ResetMoveQueue()

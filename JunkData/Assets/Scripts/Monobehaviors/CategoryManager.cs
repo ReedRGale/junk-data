@@ -29,17 +29,12 @@ public class CategoryManager : MonoBehaviour
         else if (instance != this)
             Destroy(gameObject);
         DontDestroyOnLoad(gameObject);
-    }
 
-    // Initialization information
-    private void Start()
-    {
         // Initialize the data structures.
         logicMap = new Dictionary<MoveCategory, Movable.CategoryLogic>();
         callbackCategoryList = new List<MoveCategory>();
         callbackDelegateList = new List<Movable.CategoryCallback>();
     }
-
 
     /* CategoryLogic */
     /* Category logic defines for the unit whether it should shift from one category to another.
@@ -106,11 +101,13 @@ public class CategoryManager : MonoBehaviour
     private bool ShouldDeconstruct(Movable m) { return m.GetTouchingDZ(); }
     private bool ShouldStun(Movable m) { return m.GetDamage() > 0; }
     private bool ShouldFly(Movable m) { return m.GetNyoooom() || (m.IsFlying() && m.GetDamage() <= 0); }
-    private bool ShouldRise(Movable m) { return m.GetMoveCategory() != MoveCategory.RISING ? m.GetRB2D().velocity.y > 0.5f : !m.IsStatic(); }
-    private bool ShouldFall(Movable m) { return m.GetMoveCategory() != MoveCategory.FALLING ? m.GetRB2D().velocity.y < -0.5f : !m.IsStatic(); }
+    private bool ShouldRise(Movable m) { return m.GetMoveCategory() != MoveCategory.RISING ? m.GetRB2D().velocity.y > 0.5f : 
+                                                                                             !m.IsSliding() && !m.IsStatic() && !m.IsFalling(); }
+    private bool ShouldFall(Movable m) { return m.GetMoveCategory() != MoveCategory.FALLING ? m.GetRB2D().velocity.y < -0.5f : 
+                                                                                             !m.IsSliding() && !m.IsStatic(); }
     private bool ShouldJump(Movable m) { return m.GetMoveCategory() > MoveCategory.JUMPING ? Input.GetMouseButtonUp(LEFT_CLICK) : false; }
     private bool ShouldWalk(Movable m) { return Mathf.Abs(m.GetWalkDirection()) > 0; }
-    private bool ShouldSlide(Movable m) { return m.IsGrounded() && m.GetRB2D().velocity.x > float.Epsilon; }
+    private bool ShouldSlide(Movable m) { return m.IsGrounded() && Mathf.Abs(m.GetRB2D().velocity.x) > float.Epsilon; }
 
 
     /* CategoryCallbacks */
