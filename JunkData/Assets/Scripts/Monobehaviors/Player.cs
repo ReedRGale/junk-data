@@ -9,7 +9,7 @@ public class Player : Movable
         // DEBUG:
         int debug = (int)Input.GetAxisRaw("Vertical");
         if (debug != 0)
-            prediction.DebugData();
+            lookahead.DebugData();
 
         base.Update();
     }

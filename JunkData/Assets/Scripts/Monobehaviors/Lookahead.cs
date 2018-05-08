@@ -5,7 +5,7 @@ using UnityEngine;
 
 public enum MoveState { STATIC, RIGHT, LEFT, UP, DOWN };
 
-public class PredictionTool : MonoBehaviour
+public class Lookahead : MonoBehaviour
 {
     [HideInInspector] public List<MoveState> lockStates;                                    // All directions currently locked.
     [HideInInspector] public Dictionary<MoveState, RaycastHit2D> potentialLockData;         // Future information about locks that could happen.
@@ -14,6 +14,7 @@ public class PredictionTool : MonoBehaviour
     private delegate bool PredictionReq(RaycastHit2D before, RaycastHit2D after);           // When 'before' becomes 'after'
     private delegate void AssignHit(RaycastHit2D before, RaycastHit2D after);              // Assign 'before' and 'after' to the proper vars.
 
+    private int escalation;
     private MoveState prevMoveState = MoveState.STATIC;         // Last check, what direction were we moving?
     private Dictionary<MoveState, UnlockReq> unlockReqs;        // Set of delegates that contain the information whether to unlock a lockState.
     private int direction;
@@ -72,12 +73,12 @@ public class PredictionTool : MonoBehaviour
         // Check if new move data is available.
         RecordMoveDir();
 
-        // If the player isn't grounded, we don't want to undo any settings.
+        // If the player isn't grounded, we don't need to make predictions.
         if (!(player.GetMoveCategory() == MoveCategory.WALKING || player.GetMoveCategory() == MoveCategory.FALLING)) return;
 
-        // Collect and analyze data from raycasts.
-        SetDirectionLocks(CastRays(GetCheckingMagnitude(), GetFallFocusDistance()),
-                          CastRays((GetCheckingMagnitude() + width), GetFallFocusDistance()));
+        // Collect and analyze data from close and far raycasts.
+        LookAhead(CastRays( GetCheckingMagnitude(),             GetFallFocusDistance(), GetMoveDir()),
+                  CastRays((GetCheckingMagnitude() + width),    GetFallFocusDistance(), GetMoveDir()));
 
         // Record move state data for next loop.
         RecordMoveState();
@@ -88,7 +89,7 @@ public class PredictionTool : MonoBehaviour
     /* Methods that collect data about what's ahead. */
 
     // Collect data ahead of the unit stopping distance length beginning from x offset from the rb2d's position.
-    private RaycastHit2D[] CastRays(float predictionDistance, float offset)
+    private RaycastHit2D[] CastRays(float predictionDistance, float offset, int moveDir, bool startFromOffset=false)
     {
         // Slice up prediction line into even segments to create origin points for our detection lines.
         float pOriginX = predictionDistance / PREDICTION_SLICES;
@@ -96,12 +97,10 @@ public class PredictionTool : MonoBehaviour
         // Use origins as x values to generate a line of points to cast rays from.
         RaycastHit2D[] data = new RaycastHit2D[PREDICTION_SLICES];
         for (int i = 0; i < PREDICTION_SLICES; i++)
-        {
-            data[i] = Physics2D.Raycast(new Vector2(rb2d.position.x + offset + (GetMoveDir() * pOriginX * i), rb2d.position.y), Vector2.down);
-
-            // DEBUG:
-            //Debug.DrawRay(new Vector2(rb2d.position.x + offset + (MoveDir() * pOriginX * i), rb2d.position.y), Vector2.down, Color.green, 0.05f);
-        }
+            if (startFromOffset)
+                data[i] = Physics2D.Raycast(new Vector2(offset + (moveDir * pOriginX * i), rb2d.position.y), Vector2.down);
+            else
+                data[i] = Physics2D.Raycast(new Vector2(rb2d.position.x + offset + (moveDir * pOriginX * i), rb2d.position.y), Vector2.down);
 
         // Cast rays and return them in an array.
         return data;
@@ -130,15 +129,15 @@ public class PredictionTool : MonoBehaviour
     }
 
 
-        /* Lock Detection */
-    /* Use the data to determine when locking should occur. */
+        /* Data Analysis and Manipulation */
+    /* Use the data to determine various information. */
 
 
-    // Take the data collected and set locking information.
-    private void SetDirectionLocks(RaycastHit2D[] data, RaycastHit2D[] lookahead)
+    // Take the data collected and turn it into useful forms.
+    private void LookAhead(RaycastHit2D[] close, RaycastHit2D[] far)
     {
         // LookForDanger(lookahead);  // Needs testing.
-        LookForFall(data, lookahead);
+        LookForFall(close, far);
         SetLocks();
     }
 
@@ -159,17 +158,17 @@ public class PredictionTool : MonoBehaviour
     //}
 
     // Lookahead for whether you'll fall or not.
-    private void LookForFall(RaycastHit2D[] data, RaycastHit2D[] lookahead)
+    private void LookForFall(RaycastHit2D[] close, RaycastHit2D[] far)
     {
         // Don't lookahead if you already have a hit for this direction.
         if (GetCurrentMoveState() != MoveState.STATIC && (MoveStateChanged() || !LockDataIsRelevant()))
         {
             // Check for potential falls.
-            for (int i = 0; i < data.Length; i++)
-                if (IsPastExtreme(data[0].point.y, data[i].point.y))
+            for (int i = 0; i < close.Length; i++)
+                if (IsPastExtreme(close[0].point.y, close[i].point.y))
                 {
-                    if (i != 0) KeenPrediction(data[i - 1], RequireFall, AssignFall);
-                    else KeenPrediction(data[i], RequireFall, AssignFall);
+                    if (i != 0) KeenPrediction(close[i - 1], RequireFall, AssignFall);
+                    else KeenPrediction(close[i], RequireFall, AssignFall);
                     break;
                 }
 
@@ -178,22 +177,22 @@ public class PredictionTool : MonoBehaviour
             {
                 // Get the first point in the lookahead that's within extreme change range.
                 int lookaheadFall = 0;
-                for (int i = 0; i < lookahead.Length; i++)
-                    if (GetMoveDir() < 0 && postfall.point.x > lookahead[i].point.x || GetMoveDir() > 0 && postfall.point.x < lookahead[i].point.x)
+                for (int i = 0; i < far.Length; i++)
+                    if (GetMoveDir() < 0 && postfall.point.x > far[i].point.x || GetMoveDir() > 0 && postfall.point.x < far[i].point.x)
                     {
                         lookaheadFall = i;
                         break;
                     }
 
                 // Look beyond the unit's width beyond the fall point.
-                int pointsToPlayerWidth = FindPointsToPlayerWidth(lookahead);
-                for (int i = 0; i < pointsToPlayerWidth && lookaheadFall + i < lookahead.Length; i++)
+                int pointsToPlayerWidth = FindPointsToPlayerWidth(far);
+                for (int i = 0; i < pointsToPlayerWidth && lookaheadFall + i < far.Length; i++)
                     // If the data says there are any points we experience where an extreme change isn't registered, we're not in danger of falling.
-                    if (!IsPastExtreme(data[0].point.y, lookahead[lookaheadFall + i].point.y))
+                    if (!IsPastExtreme(close[0].point.y, far[lookaheadFall + i].point.y))
                     {
                         Debug.Log("I saw ahead and figured I'd remove data...?");
-                        Debug.DrawRay(new Vector2(rb2d.position.x, data[0].point.y), Vector2.right, Color.red, 1f);
-                        Debug.DrawRay(new Vector2(rb2d.position.x, lookahead[lookaheadFall + i].point.y), Vector2.right, Color.red, 1f);
+                        Debug.DrawRay(new Vector2(rb2d.position.x, close[0].point.y), Vector2.right, Color.red, 1f);
+                        Debug.DrawRay(new Vector2(rb2d.position.x, far[lookaheadFall + i].point.y), Vector2.right, Color.red, 1f);
 
                         potentialLockData.Remove(GetCurrentMoveState());
                         lockStates.Remove(GetCurrentMoveState());
@@ -201,6 +200,26 @@ public class PredictionTool : MonoBehaviour
                     }
             }
         }
+    }
+
+    // Check if the next step is ascending or decending based on a focus of collision.
+    public void DetermineEscalation(Collision2D collision, Movable m)
+    {
+        // Get furthest collision in case of multiple collisions.
+        ContactPoint2D escalationPoint = FindEscalationPoint(collision);
+
+        // Compare current location to the next location to find escalation type.
+        RaycastHit2D[] close = CastRays(KEENING_VALUE * 10, escalationPoint.point.x, m.GetMoveDirInput(), true);
+        float curr = close[0].point.y;
+        float next = close[1].point.y;
+
+        // DEBUG
+        // Debug.DrawRay(new Vector2(close[0].point.x, curr), Vector2.down, Color.blue, 0.5f);
+        // Debug.DrawRay(new Vector2(close[1].point.x, next), Vector2.down, Color.gray, 0.5f);
+
+        if (curr < next) escalation = 1;          // Ascend
+        else if (curr > next) escalation = -1;    // Descend
+        else escalation = 0;                      // Level
     }
 
         /* UnlockReq Delegates */
@@ -301,10 +320,7 @@ public class PredictionTool : MonoBehaviour
             if (ShouldBeUnlocked(s, unlockReqs[s]))
                 states.Add(s);
         foreach (MoveState s in states)
-        {
-            Debug.Log("Unlocking " + s);
             Unlock(s);
-        }
     }
 
     // Check if a hit is within lockrange.
@@ -315,12 +331,13 @@ public class PredictionTool : MonoBehaviour
 
     
         /* Getters */
-
     // Helper function to determine the direction of the player.
     // 0:  Not Moving
     // 1:  Moving Right
     // -1: Moving Left
     public int GetMoveDir() { return rb2d.velocity.x == 0 ? 0 : (int)(Mathf.Sign(rb2d.velocity.x)); }
+
+    public int GetEscalation() { return escalation; }
 
     // Check the move direction queue to see what the last move type was.
     public int GetPrevMoveDir() { return moveDirQueue.Peek(); }
@@ -372,6 +389,7 @@ public class PredictionTool : MonoBehaviour
         return currentMoveState;
     }
 
+
         /* Helper Functions */
 
 
@@ -383,6 +401,26 @@ public class PredictionTool : MonoBehaviour
 
         // Return the width of the player divided by delta x rounded down.
         return (int)Mathf.Abs(Mathf.Floor(width / deltaX));
+    }
+
+    // Return the point furthest from the rigidbody's center.
+    private ContactPoint2D FindEscalationPoint(Collision2D collision)
+    {
+        // Record the contact point with the greatest distance from the rb2d center.
+        ContactPoint2D[] contacts = new ContactPoint2D[20];
+        ContactPoint2D escalationPoint = new ContactPoint2D();
+        int contactCount = collision.GetContacts(contacts);
+        float greatestDist = 0;
+        for (int i = 0; i < contactCount; i++)
+        {
+            if (Mathf.Abs(rb2d.position.x - contacts[i].point.x) > greatestDist)
+            {
+                greatestDist = Mathf.Abs(rb2d.position.x - contacts[i].point.x);
+                escalationPoint = contacts[i];
+            }
+        }
+
+        return escalationPoint;
     }
 
     // Records the current move state for the next physics check.
