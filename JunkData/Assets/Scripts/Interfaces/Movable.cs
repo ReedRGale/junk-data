@@ -1,9 +1,13 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Extensions;
+using Structs;
 
 public class Movable : MonoBehaviour
 {
+    public bool debugValue = true;
+
     /* Delegates */
 
 
@@ -67,6 +71,9 @@ public class Movable : MonoBehaviour
     /* State Variables */
 
 
+    // The radius of this unit.
+    protected float radius = 0;
+
     // The width of this unit.
     protected float width = 0;
 
@@ -111,9 +118,13 @@ public class Movable : MonoBehaviour
 
 
     // Move into constants object.
-    private const int LEFT_CLICK = 0;                       // Int representing the value of a left click.
+    private const int LEFT_CLICK = 0;                           // Int representing the value of a left click.
     private Vector2 NUDGE_LEFT = new Vector2(-0.05f, 0);
     private Vector2 NUDGE_RIGHT = new Vector2(0.05f, 0);
+    private Vector2 MIN_CONTACT_RANGE = new Vector2(-0.9993908f, -0.0348995f);
+    private Vector2 MAX_CONTACT_RANGE = new Vector2(0.9993908f, -0.0348995f);
+    private const float DELTA_CONTACT_ANGLE = 0.5f;
+    private const float RADIUS_CORRECTION = 0.01f;
     private const float DETECTION_RANGE = 0.03f;
     private const float STOP_MOVEMENT = 45f;
     private const float RIGHT_ANGLE = 90f;
@@ -130,7 +141,8 @@ public class Movable : MonoBehaviour
     {
         rb2d = gameObject.GetComponent<Rigidbody2D>();
         lookahead = gameObject.GetComponent<Lookahead>();
-        width = gameObject.GetComponent<Collider2D>().bounds.extents.x * 2;
+        radius = gameObject.GetComponent<Collider2D>().bounds.extents.x;
+        width = radius * 2;
 
         // Prepare category information.
         categoryCallbacks = CategoryManager.instance.BundleCallbacks();
@@ -167,15 +179,30 @@ public class Movable : MonoBehaviour
             CheckFalling();
             CheckSliding();
         }
-        
+
         // Determine and initialize the current move category.
         foreach (CategoryCallback C in categoryCallbacks)
             if (C(this, out category)) break;
 
-        if (GetMoveCategory() != MoveCategory.STATIC) Debug.Log("Move Category:  " + GetMoveCategory());
+        if (GetMoveCategory() == MoveCategory.JUMPING)
+        {
+            Debug.Log("Prev Move Category:  " + GetPrevMoveCategory() 
+                + "\nisLocked:  " + isLocked 
+                + "\nisContemplating:  " + isContemplating 
+                + "\nisWarping:  " + isWarping
+                + "\nisStunned:  " + isStunned
+                + "\nisDeconstructed:  " + isDeconstructed
+                + "\nisFlying:   " + isFlying 
+                + "\nisRising:  " + isRising
+                + "\nisFalling:  " + isFalling
+                + "\nisJumping:  " + isJumping
+                + "\nisWalking:  " + isWalking
+                + "\nisSliding:  " + isSliding
+                + "\nisStatic:  " + isStatic);
+        }
 
-        // Record move category data for next loop.
-        RecordMoveCategory();
+            // Record move category data for next loop.
+            RecordMoveCategory();
     }
 
     protected virtual void FixedUpdate()
@@ -214,7 +241,6 @@ public class Movable : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
-        if (GetMoveCategory() == MoveCategory.JUMPING) Debug.Log("I'm still entering!");
         // DEBUG
         {
             Vector3 contactPoint = collision.contacts[0].point;
@@ -224,7 +250,7 @@ public class Movable : MonoBehaviour
 
             Debug.DrawLine(center, contactPoint, Color.magenta, 1f);
         }
-        
+
         // Record collision data.
         RecordGrounded();
         RecordCollisionAngle();
@@ -242,6 +268,7 @@ public class Movable : MonoBehaviour
         lookahead.DetermineEscalation(collision, this);
 
         // Collect contact direction angle.
+        // CHANGE TO DETECT IF WE HAVE A 'HIT' IN TEH VALID ZONE
         ContactPoint2D[] contact = new ContactPoint2D[1];
         collision.GetContacts(contact);
 
@@ -257,12 +284,12 @@ public class Movable : MonoBehaviour
     
     private void OnCollisionExit2D(Collision2D collision)
     {
-        Debug.Log("Exiting");
         RecordGrounded();
         RecordCollisionAngle();
     }
 
-    /* External State Control */
+
+        /* External State Control */
 
 
     // Set this unit up for beginning their turn.
@@ -343,10 +370,10 @@ public class Movable : MonoBehaviour
     private void CheckSliding() { isSliding = categoryLogic[MoveCategory.SLIDING](this); }
 
     // Check for STATIC conditions.
-    private void CheckStatic() { isStatic = rb2d.velocity.magnitude < float.Epsilon; }
+    private void CheckStatic() { isStatic = rb2d.velocity.magnitude < float.Epsilon && isGrounded; }
 
 
-    /* Movement Logic */
+        /* Movement Logic */
 
 
     // Perform the WARP action.
@@ -398,17 +425,8 @@ public class Movable : MonoBehaviour
     // Perform the JUMPING action.
     private void Jump()
     {
-        if (!jumped)
-        {
-            rb2d.WakeUp();
-            rb2d.AddForce(mouseDirection * jumpForce, ForceMode2D.Impulse);
-            jumped = true;
-        }
-        else if (jumped && IsStatic())
-        {
-            jumped = false;
-            isJumping = false;
-        }
+        rb2d.WakeUp();
+        rb2d.AddForce(mouseDirection * jumpForce, ForceMode2D.Impulse);
     }
 
     // Perform the WALKING action.
@@ -429,7 +447,7 @@ public class Movable : MonoBehaviour
 
             // DEBUG
             Debug.DrawLine(rb2d.position, new Vector2(rb2d.position.x, rb2d.position.y + (moveDir * walkAccel).y), Color.blue, 0.5f);
-            Debug.DrawLine(rb2d.position, new Vector2(rb2d.position.x + (moveDir * walkAccel).x, rb2d.position.y ), Color.blue, 0.5f);
+            Debug.DrawLine(rb2d.position, new Vector2(rb2d.position.x + (moveDir * walkAccel).x, rb2d.position.y), Color.blue, 0.5f);
 
             // Move if we're not at max movespeed.
             if (Mathf.Abs(rb2d.velocity.x) < walkVelocity) rb2d.AddForce(moveDir * walkAccel);
@@ -438,19 +456,15 @@ public class Movable : MonoBehaviour
         {
             rb2d.velocity = Vector2.zero;
             rb2d.Sleep();
-            Debug.Log("Point 1");
         }
         else if (GetMoveCategory() == MoveCategory.FALLING) { rb2d.velocity = new Vector2(0f, rb2d.velocity.y); }
     }
 
     // Perform the SLIDING action. (For now, this is just stopping motion.)
-    private void Slide() { rb2d.Sleep();
-
-        Debug.Log("Point 2");
-    }
+    private void Slide() { rb2d.Sleep(); }
 
 
-    /* Public Getters and Setters. */
+        /* Public Getters and Setters. */
 
 
     /* Getters */
@@ -464,31 +478,30 @@ public class Movable : MonoBehaviour
     public int GetDamage() { return damageTaken; }
     public bool GetNyoooom() { return nyoom; }
     public bool IsGrounded() { return isGrounded; }
-    public List<ContactPoint2D> GetContactPoints()
+    public List<CircumferenceHit> GetGroundedHits()
     {
-        // Get collider. We can promise that there's only one collider per unit.
-        Collider2D[] colliders = new Collider2D[1];
-        if (rb2d.GetAttachedColliders(colliders) != 1)
-            throw new System.InvalidOperationException();
-        Collider2D collider = colliders[0];
+        // CHECK IF WE'VE ALREADY DONE THIS THIS ITERATION AND JUST RETURN THE LIST IF WE HAVE.
 
-        // DEBUG
-        Debug.DrawLine(collider.bounds.max, collider.bounds.min, Color.cyan, 5f);
-        Debug.DrawRay(collider.bounds.center, Vector2.down, Color.red, 5f);
+        // OTHERWISE...
+        // Collect list of contacts.
+        List<CircumferenceHit> hits = new List<CircumferenceHit>();
+        Vector2 direction = MIN_CONTACT_RANGE;
+        float angle = 0;
+        while (direction.x <= MAX_CONTACT_RANGE.x)
+        {
+            // Record raycast if it is within contact radius.
+            CircumferenceHit cHit = new CircumferenceHit(Physics2D.Raycast(rb2d.position, direction), angle, MIN_CONTACT_RANGE);
+            if (cHit.hit.distance <= radius + RADIUS_CORRECTION) { hits.Add(cHit); }
 
-        // Collect each collision point on the collider.
-        ContactPoint2D[] contacts = new ContactPoint2D[20];
-        int contactCount = collider.GetContacts(contacts);
+            // Increment Angle
+            angle += DELTA_CONTACT_ANGLE;
+            direction = direction.Rotate(DELTA_CONTACT_ANGLE);
+        }
 
-        // Convert it to a list.
-        List<ContactPoint2D> contactList = new List<ContactPoint2D>();
-        for (int i = 0; i < contactCount; i++)
-            contactList.Add(contacts[i]);
+        // Cull extraneous hits that fit the bill and limit each cluster to only the closest hits.
+        if (hits.Count > 0) { hits = ExactifyHitClusters(hits); }
 
-        // DEBUG
-        //foreach (ContactPoint2D c in contactList) Debug.DrawRay(c.point, Vector2.up, Color.blue, 5f);
-
-        return contactList;
+        return hits;
     }
 
     // Return the proper bool per category.
@@ -554,17 +567,71 @@ public class Movable : MonoBehaviour
         /* Helper Functions */
 
 
-    // Rotate a Vector2 by a number of degrees.
-    private Vector2 Rotate(Vector2 v, float degrees)
+    // Takes a list of clusters of hits and culls it down to only the most relevant hits.
+    private List<CircumferenceHit> ExactifyHitClusters(List<CircumferenceHit> list)
     {
-        float sin = Mathf.Sin(degrees * Mathf.Deg2Rad);
-        float cos = Mathf.Cos(degrees * Mathf.Deg2Rad);
+        // Determine clusters.
+        List<List<CircumferenceHit>> clusters = DetermineHitClusters(list, 3 * DELTA_CONTACT_ANGLE);
 
-        float tx = v.x;
-        float ty = v.y;
-        v.x = (cos * tx) - (sin * ty);
-        v.y = (sin * tx) + (cos * ty);
-        return v;
+        // Retrieve the collision closest to the circumference.
+        list.Clear();
+        foreach (List<CircumferenceHit> c in clusters) { list.Add(ExactifyHitCluster(c)); }
+
+        return list;
+    }
+
+    // Cuts out clusters from a list of hits.
+    private List<List<CircumferenceHit>> DetermineHitClusters(List<CircumferenceHit> hitList, float clusterDeviance)
+    {
+        // Check list for clusters and store them.
+        List<List<CircumferenceHit>> clusters = new List<List<CircumferenceHit>>();
+
+        // If there's only one contact point, there's nothing to compare.
+        if (hitList.Count == 1) { clusters.Add(hitList); }
+        else
+        {
+            List<CircumferenceHit> cluster = new List<CircumferenceHit>();
+            for (int i = 1; i < hitList.Count; i++)
+                if (WithinClusterDeviance(hitList, i, clusterDeviance))
+                    cluster.Add(hitList[i - 1]);
+                else
+                {
+                    cluster.Add(hitList[i - 1]);
+                    clusters.Add(cluster);
+                    cluster = new List<CircumferenceHit>();
+                }
+            ManageFinalClusterHit(ref cluster, ref clusters, hitList);
+        }
+
+        return clusters;
+    }
+
+    // Checks if, within a list, at a given index whether it's preceding element is within cluster deviation.
+    private bool WithinClusterDeviance(List<CircumferenceHit> list, int index, float clusterDeviance)
+    {
+        return Mathf.Abs(list[index].angle - list[index - 1].angle) <= clusterDeviance;
+    }
+
+    // Ties up loose ends involving the final value of the cluster.
+    private void ManageFinalClusterHit(ref List<CircumferenceHit> cluster, ref List<List<CircumferenceHit>> clusters, List<CircumferenceHit> hitList)
+    {
+        if (cluster.Count == 0) return;
+
+        cluster.Add(hitList[hitList.Count - 1]);
+        clusters.Add(cluster);
+    }
+
+    // Takes a cluster and finds the hit closest to the center of the collider.
+    private CircumferenceHit ExactifyHitCluster(List<CircumferenceHit> list)
+    {
+        CircumferenceHit exactHit = list[0];
+        Color debugColor = new Color(Random.value, Random.value, Random.value);
+        for (int i = 1; i < list.Count; i++)
+            if (list[i].hit.distance < list[i - 1].hit.distance)
+                exactHit = list[i];
+
+        Debug.DrawRay(exactHit.hit.point, Vector2.up, debugColor, 0.05f);
+        return exactHit;
     }
 
     // Records whether the unit is grounded or not.
@@ -574,11 +641,11 @@ public class Movable : MonoBehaviour
         isGrounded = false;
 
         // Iterate through all contacts and check for grounded state.
-        List<ContactPoint2D> contactList = GetContactPoints();
-        foreach (ContactPoint2D c in contactList)
-            if (c.point.y < prevPosition.y &&
-                c.point.x < prevPosition.x + (LESS_THAN_HALF * width) &&
-                c.point.x > prevPosition.x - (LESS_THAN_HALF * width))
+        List<CircumferenceHit> contactList = GetGroundedHits();
+        foreach (CircumferenceHit ch in contactList)
+            if (ch.hit.point.y < prevPosition.y &&
+                ch.hit.point.x < prevPosition.x + (LESS_THAN_HALF * width) &&
+                ch.hit.point.x > prevPosition.x - (LESS_THAN_HALF * width))
                 isGrounded = true;
     }
 
@@ -589,10 +656,10 @@ public class Movable : MonoBehaviour
         downToCollisionAngle = 0;
 
         // Iterate through all contacts and set the collision angle to the greatest value.
-        List<ContactPoint2D> contactList = GetContactPoints();
-        foreach (ContactPoint2D c in contactList)
+        List<CircumferenceHit> contactList = GetGroundedHits();
+        foreach (CircumferenceHit ch in contactList)
         {
-            Vector2 length = c.point - prevPosition;
+            Vector2 length = ch.hit.point - prevPosition;
             float angle = Vector2.Angle(length, Vector2.down);
             downToCollisionAngle = angle > downToCollisionAngle ? angle : downToCollisionAngle;
         }

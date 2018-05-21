@@ -13,3 +13,6 @@ Power Curve:
 Building for Different Types of Players:
 	- Ranked should reward less in-game currency but offer rank and unique swag
 	- Normals should offer more in-game currency
+
+When Changing a Constant:
+	- Make sure you're only affecting what you think you're affecting and nothing more

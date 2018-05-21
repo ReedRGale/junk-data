@@ -36,8 +36,8 @@ public class CategoryManager : MonoBehaviour
         callbackDelegateList = new List<Movable.CategoryCallback>();
     }
 
-    /* CategoryLogic */
-    /* Category logic defines for the unit whether it should shift from one category to another.
+        /* CategoryLogic */
+        /* Category logic defines for the unit whether it should shift from one category to another.
      * Any changes that an outside Function (In-game spells) wishes to do a unit should pass
      * a CategoryLogic function into the CategoryManager through Redefine.
      * 
@@ -103,15 +103,15 @@ public class CategoryManager : MonoBehaviour
     private bool ShouldFly(Movable m) { return m.GetNyoooom() || (m.IsFlying() && m.GetDamage() <= 0); }
     private bool ShouldRise(Movable m) { return m.GetRB2D().velocity.y > 0.5f && !m.IsGrounded(); }
     private bool ShouldFall(Movable m) { return m.GetRB2D().velocity.y < -0.5f && !m.IsGrounded(); }
-    private bool ShouldJump(Movable m) { return m.GetMoveCategory() > MoveCategory.JUMPING ? Input.GetMouseButtonUp(LEFT_CLICK) : false; }
+    private bool ShouldJump(Movable m) { return m.GetMoveCategory() > MoveCategory.JUMPING && m.IsGrounded() ? Input.GetMouseButtonUp(LEFT_CLICK) : false; }
     private bool ShouldWalk(Movable m) { return Mathf.Abs(m.GetMoveDirInput()) > 0; }
     private bool ShouldSlide(Movable m) { return m.IsGrounded() && Mathf.Abs(m.GetRB2D().velocity.x) > float.Epsilon; }
 
 
-    /* CategoryCallbacks */
-    /* Category callbacks defines for the unit whether it should shift from one state to another.
-     * Any changes that an outside Function (In-game spells) wishes to do a unit should pass
-     * a CategoryLogic function into the CategoryManager through Redefine. */
+        /* CategoryCallbacks */
+        /* Category callbacks defines for the unit whether it should shift from one state to another.
+         * Any changes that an outside Function (In-game spells) wishes to do a unit should pass
+         * a CategoryLogic function into the CategoryManager through Redefine. */
 
 
     // Redefine a particular category's callback functionality with a particular function.
