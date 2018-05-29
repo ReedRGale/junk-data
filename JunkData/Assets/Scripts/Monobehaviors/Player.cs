@@ -6,11 +6,14 @@ public class Player : Movable
 {
     protected override void Update()
     {
-        // DEBUG:
-        int debug = (int)Input.GetAxisRaw("Vertical");
-        if (debug != 0)
-            lookahead.DebugData();
-
         base.Update();
+
+        if (Input.GetKeyDown("down"))
+        {
+            Debug.Log("DEBUG COMMAND RUN");
+            Debug.Log("Current MoveCategory:  " + GetMoveCategory());
+            Debug.Log("Estimated Gravity:  " + Physics2D.gravity);
+            Debug.Log("Estimated Gravity Force:  " + GetRB2D().mass * Physics2D.gravity);
+        }
     }
 }

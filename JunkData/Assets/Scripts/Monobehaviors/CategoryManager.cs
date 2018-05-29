@@ -101,8 +101,8 @@ public class CategoryManager : MonoBehaviour
     private bool ShouldDeconstruct(Movable m) { return m.GetTouchingDZ(); }
     private bool ShouldStun(Movable m) { return m.GetDamage() > 0; }
     private bool ShouldFly(Movable m) { return m.GetNyoooom() || (m.IsFlying() && m.GetDamage() <= 0); }
-    private bool ShouldRise(Movable m) { return m.GetRB2D().velocity.y > 0.5f && !m.IsGrounded(); }
-    private bool ShouldFall(Movable m) { return m.GetRB2D().velocity.y < -0.5f && !m.IsGrounded(); }
+    private bool ShouldRise(Movable m) { return m.GetRB2D().velocity.y > 0 && !m.IsGrounded(); }
+    private bool ShouldFall(Movable m) { return m.GetRB2D().velocity.y < 0 && !m.IsGrounded(); }
     private bool ShouldJump(Movable m) { return m.GetMoveCategory() > MoveCategory.JUMPING && m.IsGrounded() ? Input.GetMouseButtonUp(LEFT_CLICK) : false; }
     private bool ShouldWalk(Movable m) { return Mathf.Abs(m.GetMoveDirInput()) > 0; }
     private bool ShouldSlide(Movable m) { return m.IsGrounded() && Mathf.Abs(m.GetRB2D().velocity.x) > float.Epsilon; }

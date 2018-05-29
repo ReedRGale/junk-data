@@ -16,3 +16,4 @@ Building for Different Types of Players:
 
 When Changing a Constant:
 	- Make sure you're only affecting what you think you're affecting and nothing more
+	- Any changes to friction should do so with Walk() in mind; friction in Walk() is assumed to be constant
