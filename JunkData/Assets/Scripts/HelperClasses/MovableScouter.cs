@@ -6,13 +6,13 @@ using Structs;
 
 public enum MoveState { STATIC, RIGHT, LEFT, UP, DOWN };
 
-public class Lookahead
+public class MovableScouter
 {
     public List<MoveState> lockStates;                                    // All directions currently locked.
     public Dictionary<MoveState, RaycastHit2D> potentialLockData;         // Future information about locks that could happen.
 
     private delegate bool UnlockReq(RaycastHit2D hitData);
-    private delegate bool PredictionReq(RaycastHit2D before, RaycastHit2D after);           // When 'before' becomes 'after'
+    private delegate bool IsPredictedState(RaycastHit2D before, RaycastHit2D after);           // When 'before' becomes 'after'
     private delegate void AssignHit(RaycastHit2D before, RaycastHit2D after);              // Assign 'before' and 'after' to the proper vars.
 
     private Movable unit;                                       // The Unit that is looking ahead.
@@ -32,6 +32,7 @@ public class Lookahead
     private const float KEENING_VALUE = 0.001f;
     private const float FOCUS_DIST_RATIO = 0.2f;                // How many unit widths should we be starting our fall detection from?
     private RaycastHit2D NULL_HIT;
+    private const int MAX_KEEN = 20;
 
     private const string UNSUPPORTED_MOVESTATE = "This MoveState is not yet supported for this function.";
 
@@ -39,9 +40,9 @@ public class Lookahead
         /* Constructors */
 
 
-    private Lookahead() { }
+    private MovableScouter() { }
 
-    public Lookahead(Movable theUnit)
+    public MovableScouter(Movable theUnit)
     {
         // Initialize locking data.
         unit = theUnit;
@@ -112,25 +113,24 @@ public class Lookahead
     }
 
     // Hone the prediction to get a more accurate set of before and after points.
-    private void KeenPrediction(RaycastHit2D start, PredictionReq req, AssignHit assign)
+    private void KeenPrediction(RaycastHit2D start, IsPredictedState isState, AssignHit assign)
     {
         RaycastHit2D beforeKeen = Physics2D.Raycast(new Vector2(start.point.x, unit.GetRB2D().position.y), Vector2.down);
         RaycastHit2D afterKeen = Physics2D.Raycast(new Vector2(start.point.x + (GetMoveDir() * KEENING_VALUE), unit.GetRB2D().position.y), Vector2.down);
 
-        // DEBUG:
-        Debug.DrawRay(new Vector2(start.point.x + (GetMoveDir() * KEENING_VALUE), unit.GetRB2D().position.y), Vector2.down, Color.green, 0.05f);
-
-        // Shave off values until a very close changing point is reached.
-        while (!req(beforeKeen, afterKeen))
+        // Shave off values until a very close changing point is reached; if none is found before max_keen, assign no lock data.
+        int timesShaved = 0;
+        while (!isState(beforeKeen, afterKeen) && timesShaved < MAX_KEEN)
         {
             beforeKeen = afterKeen;
             afterKeen = Physics2D.Raycast(new Vector2(afterKeen.point.x + (GetMoveDir() * KEENING_VALUE), unit.GetRB2D().position.y), Vector2.down);
+            timesShaved++;
 
             // DEBUG:
-            Debug.DrawRay(new Vector2(afterKeen.point.x + (GetMoveDir() * KEENING_VALUE), unit.GetRB2D().position.y), Vector2.down, Color.green, 0.05f);
+            Debug.DrawRay(new Vector2(afterKeen.point.x + (GetMoveDir() * KEENING_VALUE), unit.GetRB2D().position.y), Vector2.down, Color.green, 0.5f);
         }
 
-        assign(beforeKeen, afterKeen);
+        if (timesShaved < MAX_KEEN) assign(beforeKeen, afterKeen);
     }
 
 
@@ -166,7 +166,7 @@ public class Lookahead
     private void LookForFall(RaycastHit2D[] close, RaycastHit2D[] far)
     {
         // Don't lookahead if you already have a hit for this direction.
-        if (GetCurrentMoveState() != MoveState.STATIC && (MoveStateChanged() || !LockDataIsRelevant()))
+        if (unit.GetMoveCategory() == MoveCategory.WALKING && (MoveStateChanged() || !LockDataIsRelevant()))
         {
             // Check for potential falls.
             for (int i = 0; i < close.Length; i++)
@@ -214,7 +214,7 @@ public class Lookahead
         RaycastHit2D furthestCollision = FindCollisionFurthestFromX();
 
         // Compare current location to the next location to find escalation type.
-        RaycastHit2D[] close = CastRays(KEENING_VALUE * 10, furthestCollision.point.x, unit.GetMoveDirInput(), true);
+        RaycastHit2D[] close = CastRays(KEENING_VALUE * 10, furthestCollision.point.x, unit.GetMoveXInput(), true);
 
         return CompareHeightDifference(close[0].point.y, close[1].point.y);
     }
@@ -368,7 +368,7 @@ public class Lookahead
     public float GetFallFocus(MoveState state) { return unit.GetRB2D().position.x + GetFallFocusDistance(state); }
 
     // Is the difference in height between the two given points great enough to warrent a potential fall?
-    public bool IsPastExtreme(float init, float y) { return init - y > fallDetectionLength; }
+    public bool IsPastExtreme(float initY, float nextY) { return initY - nextY > fallDetectionLength; }
 
     // Is the move state the same this update as it was last update?
     public bool MoveStateChanged() { return prevMoveState != GetCurrentMoveState(); }

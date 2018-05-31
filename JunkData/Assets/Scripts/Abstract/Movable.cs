@@ -7,7 +7,7 @@ using Structs;
 public class Movable : MonoBehaviour
 {
     // DEBUG
-    private int debugValue = 0;
+    public int debugValue = 0;
 
 
         /* Delegates */
@@ -35,6 +35,9 @@ public class Movable : MonoBehaviour
     // Logic to store the current and previous move category.
     private Queue<MoveCategory> moveCategoryQueue;
 
+    // Logic to store the current and previous input values.
+    Queue<int> moveInputQueue;
+
     // The current logic which we should follow when contemplating.
     private ContemplationLogic currentContemplation;
 
@@ -59,7 +62,7 @@ public class Movable : MonoBehaviour
     protected MovableCollisionAnalyzer collisionAnalyzer;
     protected MovablePhysics localPhysics;
     protected Rigidbody2D rb2d;
-    protected Lookahead lookahead;
+    protected MovableScouter scout;
 
     // Recorded point of the mouse's position.
     protected Vector3 mousePosition;
@@ -68,6 +71,9 @@ public class Movable : MonoBehaviour
     protected Vector3 mouseDirection;
 
         /* State Variables */
+
+    // The time a horizontal button has been held.
+    protected float horizontalHeld = 0;
 
     // The radius of this unit.
     protected float radius = 0;
@@ -113,6 +119,7 @@ public class Movable : MonoBehaviour
     private const float WALLSTICK_ANGLE_RESTRICTION = 8f;
     private const float CLIMB_CORRECTION = 0.5f;
     private const float LESS_THAN_HALF = 0.49f;
+    private const float ACCEPT_LOCK_OVERRIDE = 0.4f;
 
 
         /* Monodevelop Callbacks */
@@ -124,7 +131,7 @@ public class Movable : MonoBehaviour
         radius = gameObject.GetComponent<Collider2D>().bounds.extents.x;
         collisionAnalyzer = new MovableCollisionAnalyzer(this);
         localPhysics = new MovablePhysics(this);
-        lookahead = new Lookahead(this);
+        scout = new MovableScouter(this);
 
         // Prepare category information.
         categoryCallbacks = CategoryManager.instance.BundleCallbacks();
@@ -132,11 +139,16 @@ public class Movable : MonoBehaviour
 
         // Set up category queue.
         moveCategoryQueue = new Queue<MoveCategory>();
-        ResetMoveQueue();
+        moveInputQueue = new Queue<int>();
+        ResetMoveCategoryQueue();
+        ResetMoveInputQueue();
     }
     
     protected virtual void Update()
     {
+        // Update the horizontal value.
+        HoldingHorizontal();
+
         // If true, move logic is changing in the middle of the game.
         if (logicChanged)
         {
@@ -166,18 +178,19 @@ public class Movable : MonoBehaviour
         foreach (CategoryCallback C in categoryCallbacks)
             if (C(this, out category)) break;
 
-        // Record move category data for next loop.
+        // Record data for next loop.
         RecordMoveCategory();
+        RecordMoveInput();
 
-        if (debugValue > 0 && GetMoveCategory() != MoveCategory.JUMPING)
-            Debug.Log("Move Category:  " + GetMoveCategory());
+        //if (debugValue > 0 && GetMoveCategory() != MoveCategory.JUMPING)
+        //    Debug.Log("Move Category:  " + GetMoveCategory());
 
-        if (GetMoveCategory() == MoveCategory.JUMPING)
-        {
-            Debug.Log("================================================================================================");
-            Debug.Log("PrevMoveCategory: " + GetPrevMoveCategory());
-            debugValue = 3;
-        }
+        //if (GetMoveCategory() == MoveCategory.JUMPING)
+        //{
+        //    Debug.Log("================================================================================================");
+        //    Debug.Log("PrevMoveCategory: " + GetPrevMoveCategory());
+        //    debugValue = 3;
+        //}
 
 
         // DEBUG
@@ -202,7 +215,7 @@ public class Movable : MonoBehaviour
 
     protected virtual void FixedUpdate()
     {
-        lookahead.LookAhead();
+        scout.LookAhead();
 
         switch (category)
         {
@@ -276,7 +289,7 @@ public class Movable : MonoBehaviour
     public void TurnEnd()
     {
         isLocked = true;
-        ResetMoveQueue();
+        ResetMoveCategoryQueue();
     }
 
     // Take damage and stun the unit.
@@ -396,7 +409,7 @@ public class Movable : MonoBehaviour
     // Perform the WALKING action.
     private void Walk()
     {
-        if (GetMoveCategory() != MoveCategory.FALLING && WalkingUnlocked())
+        if ((GetMoveCategory() != MoveCategory.FALLING && WalkingUnlocked()) || UnlockForced())
         {
             rb2d.WakeUp();
 
@@ -435,13 +448,14 @@ public class Movable : MonoBehaviour
     public MoveCategory GetPrevMoveCategory() { return moveCategoryQueue.Peek(); }
     public MoveCategory GetMoveCategory() { return category; }
     public Rigidbody2D GetRB2D() { return rb2d; }
-    public Lookahead GetPrediction() { return lookahead; }
-    public int GetMoveDirInput() { return (int)Input.GetAxisRaw("Horizontal"); }
+    public MovableScouter GetPrediction() { return scout; }
+    public int GetMoveXInput() { return (int)Input.GetAxisRaw("Horizontal"); }
+    public int GetPrevMoveXInput() { return moveInputQueue.Peek(); }
     public bool GetTouchingDZ() { return isTouchingDZ; }
     public int GetDamage() { return damageTaken; }
     public bool GetNyoooom() { return nyoom; }
     public bool IsGrounded() { return collisionAnalyzer.IsGrounded(true); }
-    public int GetEscalation() { return lookahead.GetEscalation(); }
+    public int GetEscalation() { return scout.GetEscalation(); }
 
     // Return the proper bool per category.
     public bool IsCategory(MoveCategory c)
@@ -525,15 +539,50 @@ public class Movable : MonoBehaviour
         }
     }
 
-    // Reset the MoveQueue.
-    private void ResetMoveQueue()
+    // Records the current move input for the next physics check.
+    private void RecordMoveInput()
+    {
+        // Prepares to read the back of the queue.
+        Queue<int>.Enumerator moveInputEnum = moveInputQueue.GetEnumerator();
+        moveInputEnum.MoveNext();
+        moveInputEnum.MoveNext();
+
+        // Update the MoveDir Queue.
+        moveInputQueue.Dequeue();
+        moveInputQueue.Enqueue(GetMoveXInput());
+    }
+
+    // Reset the MoveCategoryQueue.
+    private void ResetMoveCategoryQueue()
     {
         moveCategoryQueue.Enqueue(MoveCategory.UNKNOWN);
         moveCategoryQueue.Enqueue(MoveCategory.UNKNOWN);
     }
 
+    // Reset the MoveInputQueue
+    private void ResetMoveInputQueue()
+    {
+        moveInputQueue.Enqueue(0);
+        moveInputQueue.Enqueue(0);
+    }
+
     // Check if walking is locked.
     private bool WalkingUnlocked()
-    { return    !(GetMoveDirInput() == -1 && lookahead.lockStates.Contains(MoveState.LEFT)) 
-             && !(GetMoveDirInput() == 1 && lookahead.lockStates.Contains(MoveState.RIGHT)); }
+    { return    !(GetMoveXInput() <= 0 && scout.lockStates.Contains(MoveState.LEFT)) 
+             && !(GetMoveXInput() >= 0 && scout.lockStates.Contains(MoveState.RIGHT)); }
+
+    // Check if the unit is trying to force an unlock.
+    private bool UnlockForced() { return !WalkingUnlocked() && horizontalHeld >= ACCEPT_LOCK_OVERRIDE; }
+
+    // Records the amount of time that a value has been holding this value.
+    private void HoldingHorizontal()
+    { horizontalHeld = GetPrevMoveXInput() == GetMoveXInput() 
+            ? horizontalHeld + Time.deltaTime : 0; }
+
+    // DEBUG
+    private void AngleShooter(Vector2 start, float degrees)
+    {
+        Debug.DrawRay(start, Vector2.left.Rotate(degrees), Color.green);
+        Debug.Log("Vector: " + "(" + Vector2.left.Rotate(degrees).x + "," + Vector2.left.Rotate(degrees).y + ")");
+    }
 }

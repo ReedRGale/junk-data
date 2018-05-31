@@ -15,8 +15,8 @@ public class MovableCollisionAnalyzer
         /* Constants */
 
     private const float RIGHT_ANGLE = 90f;
-    private Vector2 MIN_CONTACT_RANGE = new Vector2(-0.9993908f, -0.0348995f);
-    private Vector2 MAX_CONTACT_RANGE = new Vector2(0.9993908f, -0.0348995f);
+    private Vector2 MIN_CONTACT_RANGE = new Vector2(-0.8660254f, -0.5f);
+    private Vector2 MAX_CONTACT_RANGE = new Vector2(0.8660254f, -0.5f);
     private const float DELTA_CONTACT_ANGLE = 0.5f;
     private const float RADIUS_CORRECTION = 0.01f;
     private Dictionary<double, CollisionRecord> hitRecords = new Dictionary<double, CollisionRecord>();
@@ -41,7 +41,7 @@ public class MovableCollisionAnalyzer
     }
 
     // Return the walk vector.
-    public Vector2 GetBaseWalkVector() { return new Vector2(unit.GetMoveDirInput() * WalkX(), unit.GetEscalation() * WalkY()); }
+    public Vector2 GetBaseWalkVector() { return new Vector2(unit.GetMoveXInput() * WalkX(), unit.GetEscalation() * WalkY()); }
 
     public List<CircumferenceHit> GetGroundedHits()
     {
@@ -204,4 +204,5 @@ public class MovableCollisionAnalyzer
     // Checks if the angle has already been recorded
     private bool AngleRecorded() { return   hitRecords.ContainsKey(currentRecord) && 
                                             !float.IsNaN(hitRecords[currentRecord].GetCollisionAngle()); }
+
 }
