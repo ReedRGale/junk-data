@@ -11,7 +11,6 @@ public class Player : Movable
         if (Input.GetKeyDown("down"))
         {
             Debug.Log("DEBUG COMMAND RUN");
-            Debug.Log("Current MoveCategory:  " + GetMoveCategory());
             Debug.Log("Estimated Gravity:  " + Physics2D.gravity);
             Debug.Log("Estimated Gravity Force:  " + GetRB2D().mass * Physics2D.gravity);
         }

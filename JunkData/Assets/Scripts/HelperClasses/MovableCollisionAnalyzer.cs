@@ -41,7 +41,7 @@ public class MovableCollisionAnalyzer
     }
 
     // Return the walk vector.
-    public Vector2 GetBaseWalkVector() { return new Vector2(unit.GetMoveXInput() * WalkX(), unit.GetEscalation() * WalkY()); }
+    public Vector2 GetBaseWalkVector() { return new Vector2(unit.GetMoveInput() * WalkX(), unit.GetEscalation() * WalkY()); }
 
     public List<CircumferenceHit> GetGroundedHits()
     {

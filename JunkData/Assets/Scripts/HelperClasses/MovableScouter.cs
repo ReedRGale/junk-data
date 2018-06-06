@@ -4,20 +4,19 @@ using System.Collections.Generic;
 using UnityEngine;
 using Structs;
 
-public enum MoveState { STATIC, RIGHT, LEFT, UP, DOWN };
 
 public class MovableScouter
 {
-    public List<MoveState> lockStates;                                    // All directions currently locked.
-    public Dictionary<MoveState, RaycastHit2D> potentialLockData;         // Future information about locks that could happen.
+    public List<MoveInput> lockStates;                                    // All directions currently locked.
+    public Dictionary<MoveInput, RaycastHit2D> potentialLockData;         // Future information about locks that could happen.
 
-    private delegate bool UnlockReq(RaycastHit2D hitData);
+    private delegate bool ShouldUnlock(RaycastHit2D hitData);
     private delegate bool IsPredictedState(RaycastHit2D before, RaycastHit2D after);           // When 'before' becomes 'after'
     private delegate void AssignHit(RaycastHit2D before, RaycastHit2D after);              // Assign 'before' and 'after' to the proper vars.
 
     private Movable unit;                                       // The Unit that is looking ahead.
-    private MoveState prevMoveState = MoveState.STATIC;         // Last check, what direction were we moving?
-    private Dictionary<MoveState, UnlockReq> unlockReqs;        // Set of delegates that contain the information whether to unlock a lockState.
+    private MoveInput prevMoveState = MoveInput.NONE;         // Last check, what direction were we moving?
+    private Dictionary<MoveInput, ShouldUnlock> unlockReqs;     // Set of delegates that contain the information whether to unlock a lockState.
     private int direction;
     private RaycastHit2D predeath;                              // The last safe point before the next potential threat.
     private RaycastHit2D postdeath;                             // The first danger point before the next potential threat.
@@ -46,9 +45,9 @@ public class MovableScouter
     {
         // Initialize locking data.
         unit = theUnit;
-        lockStates = new List<MoveState>();
-        potentialLockData = new Dictionary<MoveState, RaycastHit2D>();
-        unlockReqs = new Dictionary<MoveState, UnlockReq>();
+        lockStates = new List<MoveInput>();
+        potentialLockData = new Dictionary<MoveInput, RaycastHit2D>();
+        unlockReqs = new Dictionary<MoveInput, ShouldUnlock>();
         NULL_HIT = new RaycastHit2D();
         NULL_HIT.point = new Vector2(float.MaxValue, float.MaxValue);
         predeath = NULL_HIT;
@@ -62,15 +61,16 @@ public class MovableScouter
         moveDirQueue.Enqueue(int.MaxValue);
 
         // Initialize unlock requirements.
-        unlockReqs.Add(MoveState.LEFT, ShouldLeftBeUnlocked);
-        unlockReqs.Add(MoveState.RIGHT, ShouldRightBeUnlocked);
+        unlockReqs.Add(MoveInput.LEFT, ShouldLeftBeUnlocked);
+        unlockReqs.Add(MoveInput.RIGHT, ShouldRightBeUnlocked);
 
         // Initialize player unit data.
         fallDetectionLength = unit.GetRadius();
     }
 
-    /* Checking System */
-    /* Uses the tools we design here to find the edge, then send the locking information. */
+        /* Checking System */
+        /* Uses the tools we design here to find the edge, then send the locking information. */
+
 
     // Call in the Movable's FixedUpdate to look ahead.
     public void LookAhead()
@@ -107,8 +107,7 @@ public class MovableScouter
                 data[i] = Physics2D.Raycast(new Vector2(offset + (moveDir * pOriginX * i), unit.GetRB2D().position.y), Vector2.down);
             else
                 data[i] = Physics2D.Raycast(new Vector2(unit.GetRB2D().position.x + offset + (moveDir * pOriginX * i), unit.GetRB2D().position.y), Vector2.down);
-
-        // Cast rays and return them in an array.
+        
         return data;
     }
 
@@ -166,7 +165,7 @@ public class MovableScouter
     private void LookForFall(RaycastHit2D[] close, RaycastHit2D[] far)
     {
         // Don't lookahead if you already have a hit for this direction.
-        if (unit.GetMoveCategory() == MoveCategory.WALKING && (MoveStateChanged() || !LockDataIsRelevant()))
+        if (unit.GetActionState() is MovableWalkingState && (MoveStateChanged() || !LockDataIsRelevant()))
         {
             // Check for potential falls.
             for (int i = 0; i < close.Length; i++)
@@ -214,15 +213,15 @@ public class MovableScouter
         RaycastHit2D furthestCollision = FindCollisionFurthestFromX();
 
         // Compare current location to the next location to find escalation type.
-        RaycastHit2D[] close = CastRays(KEENING_VALUE * 10, furthestCollision.point.x, unit.GetMoveXInput(), true);
+        RaycastHit2D[] close = CastRays(KEENING_VALUE * 10, furthestCollision.point.x, unit.GetMoveInput(), true);
 
         return CompareHeightDifference(close[0].point.y, close[1].point.y);
     }
 
         /* UnlockReq Delegates */
         
-    private bool ShouldLeftBeUnlocked(RaycastHit2D hit) { return GetFallFocus(MoveState.LEFT) > hit.point.x; }
-    private bool ShouldRightBeUnlocked(RaycastHit2D hit) { return GetFallFocus(MoveState.RIGHT) < hit.point.x; }
+    private bool ShouldLeftBeUnlocked(RaycastHit2D hit) { return GetFallFocus(MoveInput.LEFT) > hit.point.x; }
+    private bool ShouldRightBeUnlocked(RaycastHit2D hit) { return GetFallFocus(MoveInput.RIGHT) < hit.point.x; }
 
         /* UnlockReq Delegates */
 
@@ -253,75 +252,7 @@ public class MovableScouter
     }
 
 
-        /* Locking */
-    /* Handles locking states and lock data. */
-
-
-    // If the lock data is still within a relevant distance. If not, also remove it and unlock it.
-    private bool LockDataIsRelevant()
-    {
-        bool isRelevant = potentialLockData.ContainsKey(GetCurrentMoveState()) ?
-            Mathf.Abs(potentialLockData[GetCurrentMoveState()].point.x - GetFallFocus()) <= GetCheckingMagnitude() : false;
-
-        // If exists and is irrelevant remove it from the data set.
-        if (potentialLockData.ContainsKey(GetCurrentMoveState()) && !isRelevant)
-        {
-            potentialLockData.Remove(GetCurrentMoveState());
-            Unlock(GetCurrentMoveState());
-        }
-
-        return isRelevant;
-    }
-
-    // Determine which directions should be locked.
-    private void SetLocks()
-    {
-        if (LockDataIsRelevant())
-        {
-            // If the fall point's x magnitude outstrips the danger point's magnitude...
-            RaycastHit2D closestDoom = Mathf.Abs(GetFallFocus() - postfall.point.x) < Mathf.Abs(GetFallFocus() - postdeath.point.x) ? postfall : postdeath;
-
-            // DEBUG:
-            Debug.DrawRay(new Vector2(closestDoom.point.x, unit.GetRB2D().position.y), Vector2.down, Color.red, 1f);
-            Debug.DrawRay(new Vector2(GetFallFocus(MoveState.LEFT), unit.GetRB2D().position.y), Vector2.down, Color.yellow, 0.05f);
-            Debug.DrawRay(new Vector2(GetFallFocus(MoveState.RIGHT), unit.GetRB2D().position.y), Vector2.down, Color.yellow, 0.05f);
-
-            // Determine which direction to lock movement.
-            if (GetFallFocus(MoveState.LEFT) < closestDoom.point.x && GetCurrentMoveState() == MoveState.LEFT)
-                SetLock(MoveState.LEFT, closestDoom);
-            else if (GetFallFocus(MoveState.RIGHT) > closestDoom.point.x && GetCurrentMoveState() == MoveState.RIGHT)
-                SetLock(MoveState.RIGHT, closestDoom);
-        }
-
-        // Check if our datapoint should be locking.
-        if (lockStates.Count > 0)
-            CheckUnlock();
-    }
-
-    // Set a particular direction as locked and record its hit data.
-    private void SetLock(MoveState state, RaycastHit2D stateData)
-    {
-        lockStates.Remove(state);
-        lockStates.Add(state);
-    }
-
-    // Unlock a given state and clear its hit data.
-    private void Unlock(MoveState state) { lockStates.Remove(state); }
-
-    // Check if any of the locking states don't need to be locked anymore.
-    private void CheckUnlock()
-    {
-        // If fall focus isn't within the hit error range, unlock it.
-        List<MoveState> states = new List<MoveState>();
-        foreach (MoveState s in lockStates)
-            if (ShouldBeUnlocked(s, unlockReqs[s]))
-                states.Add(s);
-        foreach (MoveState s in states)
-            Unlock(s);
-    }
-
-    // Check if a hit is within lockrange.
-    private bool ShouldBeUnlocked(MoveState state, UnlockReq req) { return req(potentialLockData[state]); }
+        
 
 
         /* External Data Manipulation */
@@ -349,13 +280,13 @@ public class MovableScouter
     }
 
     // Distance and direction from the radius to detect falls originating from a specific move state.
-    public float GetFallFocusDistance(MoveState state)
+    public float GetFallFocusDistance(MoveInput state)
     {
         switch (state)
         {
-            case MoveState.LEFT:
+            case MoveInput.LEFT:
                 return unit.GetWidth() * FOCUS_DIST_RATIO;
-            case MoveState.RIGHT:
+            case MoveInput.RIGHT:
                 return -unit.GetWidth() * FOCUS_DIST_RATIO;
         }
         throw new ArgumentException(UNSUPPORTED_MOVESTATE);
@@ -365,7 +296,7 @@ public class MovableScouter
     public float GetFallFocus() { return unit.GetRB2D().position.x + GetFallFocusDistance(); }
 
     // X value of the fall focus for a specific move state shifted from the rigidbody's X position.
-    public float GetFallFocus(MoveState state) { return unit.GetRB2D().position.x + GetFallFocusDistance(state); }
+    public float GetFallFocus(MoveInput state) { return unit.GetRB2D().position.x + GetFallFocusDistance(state); }
 
     // Is the difference in height between the two given points great enough to warrent a potential fall?
     public bool IsPastExtreme(float initY, float nextY) { return initY - nextY > fallDetectionLength; }
@@ -374,13 +305,13 @@ public class MovableScouter
     public bool MoveStateChanged() { return prevMoveState != GetCurrentMoveState(); }
 
     // Return the current move state.
-    private MoveState GetCurrentMoveState()
+    private MoveInput GetCurrentMoveState()
     {
-        MoveState currentMoveState = prevMoveState;
+        MoveInput currentMoveState = prevMoveState;
         if (GetMoveDir() != 0)
-            currentMoveState = GetMoveDir() < 0 ? MoveState.LEFT : MoveState.RIGHT;
+            currentMoveState = GetMoveDir() < 0 ? MoveInput.LEFT : MoveInput.RIGHT;
         else if (potentialLockData.Count == 0)
-            currentMoveState = MoveState.STATIC;
+            currentMoveState = MoveInput.NONE;
         return currentMoveState;
     }
 
