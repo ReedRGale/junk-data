@@ -19,12 +19,12 @@ public abstract class MovableLock
     /// <summary>
     /// The event is the PredictedEvent the Scout saw that prompted the creation of the lock.
     /// </summary>
-    private PredictedEvent significantEvent;
+    protected PredictedEvent significantEvent;
 
     /// <summary>
     /// This is the Movable object whose Scout saw a potential relevant event that required a lock
     /// </summary>
-    private Movable unit;
+    protected Movable unit;
 
     // Explicitly hiding the empty constructor.
     private MovableLock() { }
@@ -55,4 +55,10 @@ public abstract class MovableLock
     /// </summary>
     /// <returns></returns>
     public abstract bool IsRelevant();
+
+    
+    /* Getters */
+    
+
+    public PredictedEvent GetEvent() { return significantEvent; }
 }

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class MovableLockmaker
+public class MovableLocksmith
 {
 
     //// If the lock data is still within a relevant distance. If not, also remove it and unlock it.
