@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Structs
+namespace MovableStructs
 {
     public struct PredictedEvent
     {
