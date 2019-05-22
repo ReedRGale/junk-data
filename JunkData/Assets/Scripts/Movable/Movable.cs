@@ -64,7 +64,6 @@ public class Movable : MonoBehaviour
 
     protected virtual void FixedUpdate()
     {
-        unitScouter.LookAhead();
         if (!IsInputLocked())
             GetActionState().PerformAction();
     }
