@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Test for SquareTerrain being able to be instantiated.
+/// </summary>
 public class SquareTesting : MonoBehaviour
 {
     public SquareTerrain TerrainGameObject;

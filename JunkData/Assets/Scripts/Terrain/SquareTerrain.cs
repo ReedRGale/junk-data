@@ -21,6 +21,7 @@ public class SquareTerrain : AbstractTerrain
     /// <returns></returns>
     protected override Vector2[] ExtrapolateShape(TerrainSide theSide)
     {
+        // The angle we'd need to translate by to get another point in the square.
         float theta = theSide.Angle - 90;
         Vector2 sidePointC = new Vector2(X(theSide.CornerB, theta, theSide.Distance), 
                                          Y(theSide.CornerB, theta, theSide.Distance));

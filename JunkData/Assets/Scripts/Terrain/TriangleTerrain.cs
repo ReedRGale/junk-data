@@ -21,10 +21,9 @@ public class TriangleTerrain : AbstractTerrain
     /// <returns></returns>
     protected override Vector2[] ExtrapolateShape(TerrainSide theSide)
     {
-        float theta = theSide.Angle - 90;
-        Vector2 sidePointC = new Vector2(X(theSide.CornerB, theta, theSide.Distance),
-                                         Y(theSide.CornerB, theta, theSide.Distance));
-        Vector2 sidePointD = new Vector2(X(theSide.CornerA, theta, theSide.Distance),
+        // The angle we need to translate by to get another point in an equilateral triangle
+        float theta = theSide.Angle + 60;
+        Vector2 sidePointC = new Vector2(X(theSide.CornerA, theta, theSide.Distance),
                                          Y(theSide.CornerA, theta, theSide.Distance));
         return new Vector2[] { theSide.CornerA, theSide.CornerB, sidePointC };
     }
