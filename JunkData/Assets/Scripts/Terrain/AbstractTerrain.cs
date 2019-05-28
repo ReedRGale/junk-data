@@ -157,5 +157,23 @@ public abstract class AbstractTerrain : MonoBehaviour
 
         return theMesh;
     }
+
+    /// <summary>
+    /// The X value translation of a Vector's X to new X 'distance' away at a given 'angle'
+    /// </summary>
+    /// <param name="point">The point to translate.</param>
+    /// <param name="angle">The angle--measured from the positive X axis--that the translated X should be taken relative to</param>
+    /// <param name="distance">The distance away the translation should be from the original point</param>
+    /// <returns></returns>
+    protected float X(Vector2 point, float angle, float distance) { return distance * Mathf.Cos(angle * Mathf.Deg2Rad) + point.x; }
+
+    /// <summary>
+    /// The Y value translation of a Vector's Y to new Y 'distance' away at a given 'angle'
+    /// </summary>
+    /// <param name="point">The point to translate.</param>
+    /// <param name="angle">The angle--measured from the positive X axis--that the translated Y should be taken relative to</param>
+    /// <param name="distance">The distance away the translation should be from the original point</param>
+    /// <returns></returns>
+    protected float Y(Vector2 point, float angle, float distance) { return distance * Mathf.Sin(angle * Mathf.Deg2Rad) + point.y; }
 }
 
