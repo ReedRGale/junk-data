@@ -43,9 +43,14 @@ public abstract class AbstractTerrain : MonoBehaviour
     //private List<TerrainAttribute> _attributes;
 
     /// <summary>
-    /// The mesh filter that renders this Game Object's mesh.
+    /// The mesh filter that contains this Game Object's mesh.
     /// </summary>
     private MeshFilter _meshFilter;
+
+    /// <summary>
+    /// The mesh renderer for the Game Object's mesh.
+    /// </summary>
+    private MeshRenderer _meshRenderer;
 
 
     // Unity Callbacks
@@ -61,6 +66,7 @@ public abstract class AbstractTerrain : MonoBehaviour
         Density = 1;
 
         _meshFilter = GetComponent<MeshFilter>();
+        _meshRenderer = GetComponent<MeshRenderer>();
     }
 
     // Public Methods
@@ -127,10 +133,11 @@ public abstract class AbstractTerrain : MonoBehaviour
         int[] triangles = new Triangulator(meshVectors).Triangulate();
 
         // Assign each vertex a randomly chosen fill color.
-        Color[] colors = Enumerable.Repeat(new Color(Random.Range(0.25f, 0.75f),  // Red
-                                                     Random.Range(0.25f, 0.75f),  // Green
-                                                     Random.Range(0.25f, 0.75f)), // Blue
-                                           meshVectors.Length).ToArray();
+        Color meshColor = new Color(Random.Range(0.25f, 0.75f),  // Red
+                                    Random.Range(0.25f, 0.75f),  // Green
+                                    Random.Range(0.25f, 0.75f)); // Blue
+        Color[] colors = Enumerable.Repeat(meshColor, meshVectors.Length).ToArray();
+        _meshRenderer.material.color = meshColor;
         
         var mesh = new Mesh
         {
